@@ -1306,8 +1306,9 @@ async function joinRoom(channelId, channelName) {
                 </div>`;
         }
 
-        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        ws = new WebSocket(`${proto}://${window.location.host}/api/v1/ws?token=${activeToken}&channel_id=${channelId}`);
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsHost = window.location.host;
+        ws = new WebSocket(`${wsProtocol}//${wsHost}/api/v1/ws`);
 
         ws.onopen = () => setConnectionState('live');
         ws.onclose = () => setConnectionState('offline');
