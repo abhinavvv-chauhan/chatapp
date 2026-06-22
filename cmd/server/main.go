@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/abhinavvv-chauhan/chat-app/internal/config"
-	"github.com/abhinavvv-chauhan/chat-app/internal/repository" 
+	"github.com/abhinavvv-chauhan/chat-app/internal/repository"
 	"github.com/abhinavvv-chauhan/chat-app/internal/repository/query"
 	"github.com/abhinavvv-chauhan/chat-app/internal/server"
 	"github.com/abhinavvv-chauhan/chat-app/internal/ws"
@@ -36,22 +36,32 @@ func main() {
 	}
 	defer dbPool.Close()
 
-	queries := query.New(dbPool) 
+	slog.Info("Successfully established production-ready database connection pool")
+
+	queries := query.New(dbPool)
 
 	wsHub := ws.NewHub()
 	go wsHub.Run()
 
 	router := server.NewServer()
-	
+
 	server.SetupRoutes(router, queries, cfg.JWTSecret, wsHub)
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = cfg.ServerPort
+	}
+	if port == "" {
+		port = "8080"
+	}
+
 	srv := &http.Server{
-		Addr:    ":" + cfg.ServerPort,
+		Addr:    "0.0.0.0:" + port,
 		Handler: router,
 	}
 
 	go func() {
-		slog.Info("Starting server", "port", cfg.ServerPort, "env", cfg.Environment)
+		slog.Info("Starting server", "port", port, "env", cfg.Environment)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("HTTP server failed", "error", err)
 			os.Exit(1)
@@ -60,7 +70,7 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit 
+	<-quit
 
 	slog.Info("Shutting down server...")
 
