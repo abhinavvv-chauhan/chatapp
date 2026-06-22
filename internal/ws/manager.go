@@ -17,10 +17,11 @@ var upgrader = websocket.Upgrader{
 func ServeWS(hub *Hub, jwtSecret string, queries *query.Queries) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenStr := r.URL.Query().Get("token")
-		channelID := r.URL.Query().Get("channel_id") 
+
+		channelID := r.URL.Query().Get("channelId")
 
 		if tokenStr == "" || channelID == "" {
-			http.Error(w, "Missing token or channel_id", http.StatusUnauthorized)
+			http.Error(w, "Missing token or channelId", http.StatusUnauthorized)
 			return
 		}
 
@@ -47,8 +48,8 @@ func ServeWS(hub *Hub, jwtSecret string, queries *query.Queries) http.HandlerFun
 			send:      make(chan []byte, 256),
 			userID:    claims.UserID,
 			username:  username,
-			channelID: channelID, 
-			queries:   queries,  
+			channelID: channelID,
+			queries:   queries,
 		}
 
 		client.hub.register <- client
