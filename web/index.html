@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexus — Real-time workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   RESET
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+button { font: inherit; color: inherit; }
+img, svg { display: block; }
+
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  /* surfaces */
+  --bg-base:        #08090d;
+  --bg-surface:      #0d0f16;
+  --bg-elevated:     #141722;
+  --bg-hover:        #191d29;
+  --bg-active:       #1f2433;
+  --bg-input:        #11141d;
+
+  /* borders */
+  --border-subtle:   rgba(255,255,255,0.045);
+  --border-muted:    rgba(255,255,255,0.085);
+  --border-default:  rgba(255,255,255,0.13);
+  --border-strong:   rgba(255,255,255,0.20);
+
+  /* text */
+  --text-primary:    #f1f3f9;
+  --text-secondary:  #8b92a8;
+  --text-muted:      #565d75;
+  --text-disabled:   #353b50;
+
+  /* brand — amber, kept as the single signature accent */
+  --amber-300:       #f7c374;
+  --amber-400:       #f5b656;
+  --amber-500:       #f0a030;
+  --amber-600:       #d4872a;
+  --amber-700:       #b06f22;
+  --amber-glow:      rgba(240,160,48,0.38);
+  --amber-dim:       rgba(240,160,48,0.16);
+  --amber-faint:     rgba(240,160,48,0.07);
+
+  /* secondary tint — used only in the ambient wash, never as UI accent */
+  --indigo-tint:     #5b6bc0;
+
+  /* signal / presence — desaturated jade, not neon */
+  --signal:          #3fd7a8;
+  --signal-dim:      rgba(63,215,168,0.16);
+  --signal-glow:     rgba(63,215,168,0.30);
+
+  /* status */
+  --danger:          #f06464;
+  --danger-dim:      rgba(240,100,100,0.14);
+  --warn:            #f0a030;
+  --info:            #6c9bf0;
+  --info-dim:        rgba(108,155,240,0.14);
+
+  --radius-sm:  7px;
+  --radius-md:  11px;
+  --radius-lg:  15px;
+  --radius-xl:  20px;
+
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --sidebar-w: 264px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+  font-size: 14px;
+}
+
+::selection { background: var(--amber-dim); color: var(--text-primary); }
+
+/* focus ring — applied everywhere, satisfies accessibility floor */
+:focus-visible {
+  outline: 2px solid var(--amber-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   SHARED SCROLLBAR
+   ============================================================ */
+.scroll-thin::-webkit-scrollbar { width: 5px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+.scroll-thin::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 99px; }
+.scroll-thin::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ============================================================
+   ICONS
+   ============================================================ */
+.icon { width: 16px; height: 16px; flex-shrink: 0; }
+.icon * { vector-effect: non-scaling-stroke; }
+
+/* ============================================================
+   SIGNAL DOT (presence / connection) — refined, no neon green
+   ============================================================ */
+.signal {
+  position: relative;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--signal);
+  flex-shrink: 0;
+}
+.signal::after {
+  content: '';
+  position: absolute; inset: -5px;
+  border-radius: 50%;
+  background: var(--signal-glow);
+  filter: blur(3px);
+  opacity: 0;
+  animation: breathe 2.6s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%      { opacity: 0.55; transform: scale(1.15); }
+}
+.signal.is-connecting { background: var(--amber-500); }
+.signal.is-connecting::after { background: var(--amber-glow); animation-duration: 1s; }
+.signal.is-offline { background: var(--text-disabled); }
+.signal.is-offline::after { display: none; }
+
+/* ============================================================
+   AMBIENT BACKGROUND WASH — used only on the auth screen
+   ============================================================ */
+.ambient-glow {
+  position: absolute; inset: 0;
+  overflow: hidden; z-index: 0; pointer-events: none;
+}
+.ambient-glow .glow {
+  position: absolute; border-radius: 50%; filter: blur(90px);
+}
+.ambient-glow .glow-a {
+  width: 520px; height: 520px; background: var(--amber-600);
+  opacity: 0.16; top: -180px; left: -120px;
+  animation: driftA 19s var(--ease) infinite alternate;
+}
+.ambient-glow .glow-b {
+  width: 460px; height: 460px; background: var(--indigo-tint);
+  opacity: 0.10; bottom: -180px; right: -120px;
+  animation: driftB 23s var(--ease) infinite alternate;
+}
+@keyframes driftA { from { transform: translate(0,0) scale(1); } to { transform: translate(40px, 30px) scale(1.08); } }
+@keyframes driftB { from { transform: translate(0,0) scale(1); } to { transform: translate(-30px,-40px) scale(1.05); } }
+.ambient-grid {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, black 0%, transparent 75%);
+}
+
+/* ============================================================
+   AUTH SCREEN
+   ============================================================ */
+#auth-panel {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-base);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.login-card {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 396px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-xl);
+  padding: 36px 36px 30px;
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  animation: cardIn 560ms var(--ease) both;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.login-logo {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 28px;
+  animation: markIn 520ms var(--ease-spring) both;
+}
+@keyframes markIn {
+  from { opacity: 0; transform: scale(0.6) rotate(-8deg); }
+  to   { opacity: 1; transform: scale(1) rotate(0); }
+}
+.login-logo-mark {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--amber-300), var(--amber-600));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px -2px var(--amber-glow);
+}
+.login-logo-mark svg { width: 17px; height: 17px; fill: #1a0f02; }
+.login-logo-name { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; }
+
+.login-heading { font-size: 21px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 5px; }
+.login-sub { font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 24px; }
+
+/* tab switcher */
+.auth-tabs {
+  position: relative;
+  display: flex;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  margin-bottom: 24px;
+}
+.auth-tabs-indicator {
+  position: absolute; top: 4px; left: 4px;
+  width: calc(50% - 4px); height: calc(100% - 8px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  transition: transform 320ms var(--ease);
+}
+.auth-tabs.mode-register .auth-tabs-indicator { transform: translateX(100%); }
+.auth-tab {
+  position: relative; z-index: 1; flex: 1;
+  padding: 8px 0; text-align: center;
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--text-muted);
+  transition: color var(--ease) 150ms;
+  border-radius: 8px;
+}
+.auth-tabs:not(.mode-register) #tab-login,
+.auth-tabs.mode-register #tab-register { color: var(--text-primary); }
+
+.auth-form { display: flex; flex-direction: column; }
+.field-group { margin-bottom: 16px; }
+.field-label {
+  display: block; font-size: 11.5px; font-weight: 600;
+  color: var(--text-secondary); letter-spacing: 0.05em;
+  text-transform: uppercase; margin-bottom: 7px;
+}
+.field-shell { position: relative; }
+.field-input {
+  width: 100%; padding: 11px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md); color: var(--text-primary);
+  font-family: var(--font-body); font-size: 13.5px;
+  outline: none; transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease), background 160ms var(--ease);
+}
+.field-input.has-toggle { padding-right: 40px; }
+.field-input::placeholder { color: var(--text-muted); }
+.field-input:hover { border-color: var(--border-strong); }
+.field-input:focus { border-color: var(--amber-500); box-shadow: 0 0 0 3px var(--amber-dim); background: var(--bg-elevated); }
+.field-input.shake { animation: shake 380ms var(--ease); border-color: var(--danger); }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); } 40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); } 80% { transform: translateX(3px); }
+}
+
+.field-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 28px; border-radius: 7px;
+  background: transparent; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  transition: color 150ms var(--ease), background 150ms var(--ease);
+}
+.field-toggle:hover { color: var(--text-secondary); background: var(--bg-hover); }
+.field-toggle svg { width: 16px; height: 16px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--font-body); font-weight: 600; letter-spacing: -0.01em;
+  border: none; border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 150ms var(--ease), transform 120ms var(--ease), box-shadow 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease);
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-primary {
+  width: 100%; margin-top: 4px;
+  padding: 12px 20px; font-size: 13.5px;
+  background: var(--amber-500); color: #1a0f02;
+  box-shadow: 0 1px 0 0 rgba(255,255,255,0.12) inset, 0 8px 20px -8px var(--amber-glow);
+}
+.btn-primary:hover:not(:disabled) { background: var(--amber-400); }
+
+.btn-ghost {
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: 9px 16px; font-size: 13px;
+}
+.btn-ghost:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+
+.btn-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: transparent; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  transition: color 140ms var(--ease), background 140ms var(--ease);
+}
+.btn-icon:hover { color: var(--text-primary); background: var(--bg-hover); }
+.btn-icon svg { width: 15px; height: 15px; }
+
+.spinner {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.18); border-top-color: rgba(0,0,0,0.65);
+  animation: spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+.spinner.light { border-color: rgba(255,255,255,0.18); border-top-color: rgba(255,255,255,0.75); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-banner {
+  display: none;
+  align-items: flex-start; gap: 8px;
+  font-size: 12.5px; color: #ffb4b4;
+  background: var(--danger-dim);
+  border: 1px solid rgba(240,100,100,0.28);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-top: 16px;
+  animation: slideDown 220ms var(--ease) both;
+}
+.error-banner svg { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--danger); }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+.auth-switch-row { text-align: center; font-size: 12.5px; color: var(--text-muted); margin-top: 20px; }
+.auth-switch-row button { background: none; border: none; color: var(--amber-400); font-weight: 600; cursor: pointer; font-size: 12.5px; }
+.auth-switch-row button:hover { color: var(--amber-300); text-decoration: underline; }
+
+/* ============================================================
+   APP SHELL
+   ============================================================ */
+#app-container { display: none; height: 100%; width: 100%; position: relative; }
+#app-container.visible { display: flex; animation: appIn 360ms var(--ease) both; }
+@keyframes appIn { from { opacity: 0; } to { opacity: 1; } }
+
+#sidebar-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+  opacity: 0; pointer-events: none; z-index: 39;
+  transition: opacity 220ms var(--ease);
+}
+#sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+
+/* ── SIDEBAR ─────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; height: 100%;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 16px 14px 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 9px;
+}
+.sidebar-logo-mark {
+  width: 26px; height: 26px;
+  background: linear-gradient(135deg, var(--amber-300), var(--amber-600));
+  border-radius: 7px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.sidebar-logo-mark svg { width: 12px; height: 12px; fill: #1a0f02; }
+.sidebar-brand { font-size: 14.5px; font-weight: 700; letter-spacing: -0.03em; }
+.sidebar-status { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
+.sidebar-status span { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
+.sidebar-body { flex: 1; overflow-y: auto; padding: 10px 0 4px; }
+
+.section-label-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px 4px 18px;
+}
+.section-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-muted);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.section-actions { display: flex; align-items: center; gap: 2px; opacity: 0.5; transition: opacity 160ms var(--ease); }
+.ws-section:hover .section-actions { opacity: 1; }
+.section-actions .btn-icon { width: 22px; height: 22px; border-radius: 6px; }
+.section-actions .btn-icon svg { width: 13px; height: 13px; }
+
+.ws-section { margin-bottom: 6px; }
+
+.channel-item {
+  position: relative;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6.5px 12px 6.5px 18px;
+  margin: 1px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+  color: var(--text-secondary); font-size: 13.5px; font-weight: 400;
+  border: none; background: transparent; width: calc(100% - 16px);
+  text-align: left;
+  overflow: hidden;
+}
+.channel-item::before {
+  content: ''; position: absolute; left: 0; top: 18%; bottom: 18%; width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--amber-500);
+  transform: scaleY(0);
+  transition: transform 200ms var(--ease-spring);
+}
+.channel-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.channel-item.active { background: var(--amber-faint); color: var(--amber-400); font-weight: 500; }
+.channel-item.active::before { transform: scaleY(1); }
+.channel-hash { font-size: 14px; flex-shrink: 0; opacity: 0.45; font-family: var(--font-mono); }
+.channel-item.active .channel-hash { opacity: 0.85; }
+.channel-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.channel-badge {
+  margin-left: auto; flex-shrink: 0;
+  background: var(--amber-500); color: #1a0f02;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 99px;
+}
+
+.sidebar-empty {
+  font-size: 12.5px; color: var(--text-muted); padding: 24px 20px; text-align: center; line-height: 1.5;
+}
+.loading-stack { padding: 8px 18px; }
+.loading-row { height: 12px; border-radius: 4px; margin: 9px 0; background: var(--bg-elevated); position: relative; overflow: hidden; }
+.loading-row::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.06) 45%, transparent 90%);
+  animation: shimmerSweep 1.6s linear infinite;
+}
+
+@keyframes shimmerSweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+.sidebar-footer { padding: 10px 12px 12px; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 8px; }
+
+.btn-explore {
+  width: 100%; padding: 9px 12px;
+  background: var(--bg-elevated); color: var(--text-secondary);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md);
+  cursor: pointer; font-size: 12.5px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease);
+}
+.btn-explore:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-strong); }
+.btn-explore svg { width: 14px; height: 14px; }
+
+.workspace-tag {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px; color: var(--text-secondary); font-weight: 500;
+}
+
+/* online users */
+#online-users-section { margin-top: 4px; }
+.online-stack { display: flex; flex-direction: column; gap: 1px; padding: 2px 8px 6px; }
+.online-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 10px; border-radius: var(--radius-md);
+  animation: fadeUp 220ms var(--ease) both;
+}
+.online-avatar-wrap { position: relative; flex-shrink: 0; }
+.online-avatar-wrap .signal {
+  position: absolute; bottom: -1px; right: -1px;
+  width: 8px; height: 8px;
+  border: 2px solid var(--bg-surface); box-sizing: content-box;
+}
+.online-name { font-size: 12.5px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── CHAT MAIN ───────────────────────────────────────── */
+.chat-main { flex: 1; display: none; flex-direction: column; background: var(--bg-base); height: 100%; overflow: hidden; min-width: 0; }
+.chat-main.visible { display: flex; }
+
+.chat-header {
+  padding: 0 24px;
+  height: 58px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+}
+.chat-header-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mobile-menu-btn { display: none; }
+.chat-hash { font-size: 16px; color: var(--text-muted); font-family: var(--font-mono); font-weight: 400; }
+.chat-channel-name { font-size: 14.5px; font-weight: 600; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chat-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.presence-pill {
+  display: none; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 99px;
+  background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+  font-size: 11.5px; color: var(--text-secondary); font-weight: 500;
+}
+.presence-pill.show { display: flex; }
+.presence-pill svg { width: 13px; height: 13px; }
+
+.conn-badge {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 11px; border-radius: 99px;
+  background: var(--signal-dim); border: 1px solid rgba(63,215,168,0.22);
+  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+.conn-badge span { font-size: 10.5px; font-weight: 700; color: var(--signal); letter-spacing: 0.05em; text-transform: uppercase; }
+.conn-badge.connecting { background: var(--amber-dim); border-color: rgba(240,160,48,0.25); }
+.conn-badge.connecting span { color: var(--amber-400); }
+.conn-badge.offline { background: rgba(255,255,255,0.04); border-color: var(--border-muted); }
+.conn-badge.offline span { color: var(--text-muted); }
+
+/* messages */
+.messages-area { flex: 1; overflow-y: auto; padding: 18px 24px 6px; display: flex; flex-direction: column; scroll-behavior: smooth; }
+
+.state-empty { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; text-align: center; padding: 20px; }
+.state-empty-icon {
+  width: 46px; height: 46px; border-radius: var(--radius-md);
+  background: var(--bg-elevated); border: 1px solid var(--border-muted);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 2px;
+  animation: floatIcon 4s ease-in-out infinite;
+}
+@keyframes floatIcon { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.state-empty-icon svg { width: 20px; height: 20px; stroke: var(--text-muted); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.state-heading { font-size: 13.5px; font-weight: 600; color: var(--text-secondary); }
+.state-sub { font-size: 12.5px; color: var(--text-muted); }
+
+.msg-group {
+  display: flex; gap: 12px; padding: 8px 10px;
+  border-radius: var(--radius-md);
+  animation: fadeUp 260ms var(--ease) both;
+  transition: background 120ms var(--ease);
+}
+.msg-group:hover { background: rgba(255,255,255,0.018); }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.msg-avatar {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.92);
+  margin-top: 1px; box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset;
+}
+.msg-body { flex: 1; min-width: 0; }
+.msg-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.msg-sender { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.msg-time { font-size: 10.5px; color: var(--text-muted); font-weight: 500; font-family: var(--font-mono); }
+.msg-text { font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
+
+.day-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 16px 10px 8px; color: var(--text-muted); font-size: 11px;
+  font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.day-divider::before, .day-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-subtle); }
+
+/* skeleton */
+.skel-row { display: flex; gap: 12px; padding: 8px 10px; opacity: 0.5; }
+.skel-avatar { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--bg-elevated); flex-shrink: 0; position: relative; overflow: hidden; }
+.skel-line { height: 10px; border-radius: 4px; background: var(--bg-elevated); margin: 6px 0; position: relative; overflow: hidden; }
+.skel-avatar::after, .skel-line::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,0.07) 50%, transparent 100%);
+  animation: shimmerSweep 1.5s linear infinite;
+}
+
+/* ── INPUT BAR ───────────────────────────────────────── */
+.input-bar { padding: 10px 20px 16px; }
+.input-wrap {
+  max-width: 920px; margin: 0 auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+  overflow: hidden;
+}
+.input-wrap:focus-within { border-color: rgba(240,160,48,0.45); box-shadow: 0 0 0 3px var(--amber-dim); }
+.input-top { display: flex; align-items: flex-end; gap: 0; }
+#message-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text-primary); font-family: var(--font-body);
+  font-size: 13.5px; line-height: 1.6; padding: 13px 4px 13px 16px;
+  resize: none; max-height: 140px; overflow-y: auto;
+}
+#message-input::placeholder { color: var(--text-muted); }
+
+.send-btn {
+  flex-shrink: 0; align-self: flex-end;
+  margin: 7px 8px 7px 4px;
+  width: 34px; height: 34px;
+  background: var(--amber-500); border: none; border-radius: var(--radius-sm);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 150ms var(--ease), transform 140ms var(--ease-spring);
+}
+.send-btn:hover { background: var(--amber-400); }
+.send-btn:active { transform: scale(0.88) rotate(-6deg); }
+.send-btn svg { width: 15px; height: 15px; fill: #1a0f02; }
+
+.input-hint { padding: 0 16px 10px; font-size: 11px; color: var(--text-disabled); }
+.input-hint kbd {
+  font-family: var(--font-mono); font-size: 10px;
+  background: var(--bg-elevated); border: 1px solid var(--border-muted);
+  border-radius: 4px; padding: 1px 5px; color: var(--text-muted);
+}
+
+/* ============================================================
+   OVERLAYS — backdrop shared by discover + prompt modals
+   ============================================================ */
+.overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(5,6,10,0.66);
+  backdrop-filter: blur(6px);
+  display: none; align-items: center; justify-content: center;
+  padding: 20px;
+  opacity: 0; transition: opacity 200ms var(--ease);
+}
+.overlay.in { opacity: 1; }
+.overlay-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);
+  transform: translateY(14px) scale(0.97);
+  transition: transform 240ms var(--ease-spring);
+}
+.overlay.in .overlay-card { transform: translateY(0) scale(1); }
+
+.overlay-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--border-subtle); }
+.overlay-title { font-size: 15.5px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 9px; }
+.overlay-title svg { width: 17px; height: 17px; color: var(--amber-400); }
+
+/* discover modal */
+#discover-modal .overlay-card { width: 100%; max-width: 480px; max-height: 78vh; display: flex; flex-direction: column; }
+.discover-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 18px; }
+.discover-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 11px 12px;
+  transition: transform 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease);
+}
+.discover-row:hover { transform: translateY(-1px); border-color: var(--border-default); background: var(--bg-hover); }
+.discover-avatar { width: 36px; height: 36px; border-radius: var(--radius-sm); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: rgba(255,255,255,0.92); }
+.discover-name { flex: 1; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discover-join-btn {
+  flex-shrink: 0; padding: 7px 14px; font-size: 12px; font-weight: 700;
+  background: var(--amber-500); color: #1a0f02; border: none; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: background 150ms var(--ease);
+}
+.discover-join-btn:hover { background: var(--amber-400); }
+.discover-join-btn:disabled { opacity: 0.7; cursor: default; }
+.discover-empty, .discover-error { text-align: center; padding: 40px 20px; font-size: 13px; color: var(--text-muted); }
+.discover-error { color: var(--danger); }
+
+/* prompt modal */
+#prompt-modal .overlay-card { width: 100%; max-width: 380px; }
+.prompt-body { padding: 20px; }
+.prompt-actions { display: flex; gap: 10px; margin-top: 18px; }
+.prompt-actions .btn { flex: 1; }
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+#toast-stack {
+  position: fixed; bottom: 20px; right: 20px; z-index: 80;
+  display: flex; flex-direction: column; gap: 10px;
+  width: 320px; max-width: calc(100vw - 40px);
+}
+.toast {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 12px 14px 13px;
+  box-shadow: 0 16px 40px -12px rgba(0,0,0,0.5);
+  opacity: 0; transform: translateX(24px) scale(0.96);
+  transition: opacity 220ms var(--ease), transform 220ms var(--ease-spring);
+  overflow: hidden;
+}
+.toast.in { opacity: 1; transform: translateX(0) scale(1); }
+.toast.out { opacity: 0; transform: translateX(24px) scale(0.96); transition: opacity 180ms var(--ease), transform 180ms var(--ease); }
+.toast-icon { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast-icon svg { width: 18px; height: 18px; }
+.toast-success .toast-icon svg { color: var(--signal); }
+.toast-error .toast-icon svg { color: var(--danger); }
+.toast-info .toast-icon svg { color: var(--info); }
+.toast-msg { flex: 1; font-size: 12.5px; color: var(--text-primary); line-height: 1.45; padding-top: 1px; }
+.toast-close { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; flex-shrink: 0; }
+.toast-close svg { width: 14px; height: 14px; }
+.toast-close:hover { color: var(--text-secondary); }
+.toast-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--border-strong); width: 100%; transform-origin: left; animation: toastDrain linear forwards; }
+.toast-success .toast-bar { background: var(--signal); }
+.toast-error .toast-bar { background: var(--danger); }
+.toast-info .toast-bar { background: var(--info); }
+@keyframes toastDrain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 820px) {
+  .mobile-menu-btn { display: flex; }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 260ms var(--ease);
+    box-shadow: 30px 0 60px -20px rgba(0,0,0,0.5);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .presence-pill { display: none !important; }
+}
+
+/* ============================================================
+   ACCESSIBILITY — reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════ AUTH ══════════════════════════ -->
+<div id="auth-panel">
+  <div class="ambient-grid"></div>
+  <div class="ambient-glow"><span class="glow glow-a"></span><span class="glow glow-b"></span></div>
+
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark">
+        <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M9 1L16.5 5.5V12.5L9 17L1.5 12.5V5.5L9 1Z"/></svg>
+      </div>
+      <span class="login-logo-name">Nexus</span>
+    </div>
+
+    <h2 class="login-heading" id="auth-heading">Welcome back</h2>
+    <p class="login-sub" id="auth-subtitle">Sign in to get back to your workspaces.</p>
+
+    <div class="auth-tabs" id="auth-tabs">
+      <div class="auth-tabs-indicator"></div>
+      <button type="button" class="auth-tab" id="tab-login" onclick="toggleAuth('login')">Sign in</button>
+      <button type="button" class="auth-tab" id="tab-register" onclick="toggleAuth('register')">Create account</button>
+    </div>
+
+    <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+      <div class="field-group">
+        <label class="field-label" for="login-email">Email</label>
+        <div class="field-shell">
+          <input class="field-input" type="email" id="login-email" placeholder="you@company.com" required autocomplete="email">
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="login-password">Password</label>
+        <div class="field-shell">
+          <input class="field-input has-toggle" type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+          <button type="button" class="field-toggle" onclick="togglePassword('login-password', this)" aria-label="Show password">
+            <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" id="login-submit">
+        <span id="login-submit-label">Sign in</span>
+      </button>
+    </form>
+
+    <form id="register-form" class="auth-form" style="display:none" onsubmit="handleRegister(event)">
+      <div class="field-group">
+        <label class="field-label" for="reg-username">Username</label>
+        <div class="field-shell">
+          <input class="field-input" type="text" id="reg-username" placeholder="jane_doe" required autocomplete="username">
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="reg-email">Email</label>
+        <div class="field-shell">
+          <input class="field-input" type="email" id="reg-email" placeholder="you@company.com" required autocomplete="email">
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="reg-password">Password</label>
+        <div class="field-shell">
+          <input class="field-input has-toggle" type="password" id="reg-password" placeholder="••••••••" required autocomplete="new-password">
+          <button type="button" class="field-toggle" onclick="togglePassword('reg-password', this)" aria-label="Show password">
+            <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" id="register-submit">
+        <span id="register-submit-label">Create account</span>
+      </button>
+    </form>
+
+    <p class="error-banner" id="auth-error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><circle cx="12" cy="16" r="0.6" fill="currentColor" stroke="none"/></svg>
+      <span id="auth-error-text"></span>
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ APP ══════════════════════════ -->
+<div id="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
+<div id="app-container">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo-mark">
+        <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M9 1L16.5 5.5V12.5L9 17L1.5 12.5V5.5L9 1Z"/></svg>
+      </div>
+      <span class="sidebar-brand">Nexus</span>
+      <button class="btn-icon" style="margin-left:auto" onclick="createNewWorkspace()" title="New workspace">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+
+    <div class="sidebar-body scroll-thin" id="sidebar-content">
+      <div class="loading-stack">
+        <div class="loading-row" style="width:60%"></div>
+        <div class="loading-row" style="width:80%"></div>
+        <div class="loading-row" style="width:50%"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="btn-explore" onclick="openDiscover()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.8 9.2L12 12l-2.8 2.8L12 12l2.8-2.8z"/></svg>
+        Explore communities
+      </button>
+      <div class="workspace-tag">
+        <span class="signal" id="app-signal"></span>
+        Connected to Nexus
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat-main" id="chat-panel">
+    <div class="chat-header">
+      <div class="chat-header-left">
+        <button class="btn-icon mobile-menu-btn" onclick="toggleSidebar(true)" title="Open sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <span class="chat-hash">#</span>
+        <span class="chat-channel-name" id="channel-name-display">general</span>
+      </div>
+      <div class="chat-header-right">
+        <div class="presence-pill" id="presence-pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 19.5c0-3 2.5-5.4 5.5-5.4s5.5 2.4 5.5 5.4"/><circle cx="17" cy="9" r="2.3"/><path d="M15 14.3c2.5.4 4.5 2.3 4.5 5.2"/></svg>
+          <span id="presence-count">0 online</span>
+        </div>
+        <div class="conn-badge is-connecting" id="conn-badge">
+          <span class="signal is-connecting" id="conn-dot"></span>
+          <span id="conn-label">Connecting</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages-area scroll-thin" id="messages-container">
+      <div class="state-empty" id="welcome-state">
+        <div class="state-empty-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 14a2 2 0 0 1-2 2H8l-5 4V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <p class="state-heading">Select a channel to start</p>
+        <p class="state-sub">Messages will appear here in real time</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrap">
+        <div class="input-top" style="display: flex; align-items: center; gap: 10px;">
+          
+          <button class="input-tool-btn" onclick="document.getElementById('file-input').click()" title="Attach file" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.4 12.5 21a5 5 0 0 1-7-7l8.7-8.7a3.5 3.5 0 0 1 5 5L10.6 18.7a2 2 0 0 1-3-3l7-7"/></svg>
+          </button>
+          <input type="file" id="file-input" style="display:none" onchange="handleFileUpload(event)">
+ 
+          <button class="input-tool-btn" onclick="openPollModal()" title="Create poll" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19V11"/><path d="M12 19V5"/><path d="M19 19v-7"/></svg>
+          </button>
+ 
+          <textarea
+            id="message-input"
+            rows="1"
+            placeholder="Message this channel…"
+            onkeydown="handleKeyPress(event)"
+            oninput="autoResize(this)"
+            style="flex: 1; background: transparent; border: none; color: white; resize: none; outline: none; font-family: inherit; font-size: 15px; max-height: 140px; overflow-y: auto;"></textarea>
+          
+          <button class="send-btn" onclick="sendMessage()" title="Send message" style="background: #f59e0b; color: #000; border: none; width: 36px; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M3 11l18-8-8 18-2.4-7.2L3 11z"/></svg>
+          </button>
+        </div>
+        <p class="input-hint"><kbd>Enter</kbd> to send &nbsp;·&nbsp; <kbd>Shift</kbd>+<kbd>Enter</kbd> for new line</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- discover modal -->
+  <div id="discover-modal" class="overlay">
+    <div class="overlay-card">
+      <div class="overlay-header">
+        <span class="overlay-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M14.8 9.2L12 12l-2.8 2.8L12 12l2.8-2.8z"/></svg>
+          Discover communities
+        </span>
+        <button class="btn-icon" onclick="closeDiscover()" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="discover-list scroll-thin" id="discover-list"></div>
+    </div>
+  </div>
+
+  <!-- generic prompt modal (replaces native prompt()) -->
+  <div id="prompt-modal" class="overlay">
+    <div class="overlay-card">
+      <div class="overlay-header">
+        <span class="overlay-title" id="prompt-modal-title">New item</span>
+        <button class="btn-icon" onclick="cancelPromptModal()" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="prompt-body">
+        <label class="field-label" id="prompt-modal-label" for="prompt-modal-input">Name</label>
+        <input class="field-input" id="prompt-modal-input" type="text" onkeydown="if(event.key==='Enter')submitPromptModal(); if(event.key==='Escape')cancelPromptModal();">
+        <div class="prompt-actions">
+          <button class="btn btn-ghost" onclick="cancelPromptModal()">Cancel</button>
+          <button class="btn btn-primary" id="prompt-modal-confirm" onclick="submitPromptModal()" style="margin-top:0">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- toasts -->
+<div id="toast-stack"></div>
+
+
+
+<div id="poll-modal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 50; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+        <div style="background: #1e293b; width: 100%; max-width: 420px; padding: 28px; border-radius: 16px; border: 1px solid #334155; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 16px;">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="color: white; margin: 0; font-size: 20px;">Poll</h3>
+                <button onclick="closePollModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 24px; cursor: pointer;">&times;</button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <label style="color: #cbd5e1; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;">QUESTION</label>
+                <input id="poll-q" placeholder="Ask a question..." style="width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;" id="poll-options-container">
+                <label style="color: #cbd5e1; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;">OPTIONS</label>
+                <div class="poll-option-wrapper" style="display: flex; gap: 8px;">
+                    <input class="poll-opt-input" placeholder="Option 1" style="flex: 1; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+                </div>
+                <div class="poll-option-wrapper" style="display: flex; gap: 8px;">
+                    <input class="poll-opt-input" placeholder="Option 2" style="flex: 1; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+                </div>
+            </div>
+
+            <button onclick="addPollOption()" style="background: transparent; border: 1px dashed #475569; color: #94a3b8; padding: 12px; border-radius: 8px; cursor: pointer; font-size: 14px; transition: 0.2s; text-align: left;">
+                + Add another option
+            </button>
+
+            <div style="display: flex; gap: 12px; margin-top: 8px;">
+                <button onclick="closePollModal()" style="flex: 1; padding: 12px; background: transparent; border: 1px solid #475569; color: white; border-radius: 8px; cursor: pointer; font-weight: bold;">Cancel</button>
+                <button onclick="sendPoll()" style="flex: 1; padding: 12px; background: #f59e0b; border: none; color: black; font-weight: bold; border-radius: 8px; cursor: pointer;">Send Poll</button>
+            </div>
+            
+        </div>
+    </div>
+
+<script>
+let ws = null;
+let activeToken = '';
+let activeChannelId = '';
+let activeChannelName = '';
+let promptResolve = null;
+
+/* ============================================================
+   AVATAR COLOR — generated two-tone gradients, hashed from id
+   ============================================================ */
+const AVATAR_PALETTE = ['#e8633c','#3d7bd9','#1fa37a','#a855f7','#d9468b','#3f8f8f','#c9892d','#5b6bc0','#db5a6b','#4e9c5e'];
+
+function hashStr(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return h;
+}
+
+function shade(hex, percent) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) + Math.round(2.55 * percent);
+    let g = ((n >> 8) & 0xff) + Math.round(2.55 * percent);
+    let b = (n & 0xff) + Math.round(2.55 * percent);
+    r = Math.min(255, Math.max(0, r));
+    g = Math.min(255, Math.max(0, g));
+    b = Math.min(255, Math.max(0, b));
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+function getAvatarColor(id) {
+    if (!id) return AVATAR_PALETTE[0];
+    return AVATAR_PALETTE[hashStr(id) % AVATAR_PALETTE.length];
+}
+
+function getAvatarGradient(id) {
+    const base = getAvatarColor(id);
+    return `linear-gradient(135deg, ${shade(base, 10)} 0%, ${shade(base, -20)} 100%)`;
+}
+
+function getInitials(id) {
+    if (!id || id.length < 2) return 'U';
+    return id.substring(0, 2).toUpperCase();
+}
+
+function formatId(id) {
+    if (!id) return 'Unknown';
+    return 'User ' + id.substring(0, 8);
+}
+
+function escHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ============================================================
+   TOASTS — replaces alert()
+   ============================================================ */
+const TOAST_ICONS = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.4l2.6 2.6L16 9.5"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v6"/><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.7" r="0.6" fill="currentColor" stroke="none"/></svg>'
+};
+
+function showToast(message, type = 'info', duration = 4200) {
+    const stack = document.getElementById('toast-stack');
+    const id = 'toast-' + Date.now() + '-' + Math.floor(Math.random() * 9999);
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.id = id;
+    toast.innerHTML = `
+        <div class="toast-icon">${TOAST_ICONS[type] || TOAST_ICONS.info}</div>
+        <p class="toast-msg">${escHtml(message)}</p>
+        <button class="toast-close" onclick="dismissToast('${id}')" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <div class="toast-bar" style="animation-duration:${duration}ms"></div>`;
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('in'));
+    toast._timer = setTimeout(() => dismissToast(id), duration);
+}
+
+function dismissToast(id) {
+    const toast = document.getElementById(id);
+    if (!toast) return;
+    clearTimeout(toast._timer);
+    toast.classList.remove('in');
+    toast.classList.add('out');
+    setTimeout(() => toast.remove(), 200);
+}
+
+/* ============================================================
+   GENERIC PROMPT MODAL — replaces native prompt()
+   ============================================================ */
+function showPromptModal({ title, label, placeholder = '', confirmText = 'Create' }) {
+    return new Promise((resolve) => {
+        promptResolve = resolve;
+        document.getElementById('prompt-modal-title').textContent = title;
+        document.getElementById('prompt-modal-label').textContent = label;
+        document.getElementById('prompt-modal-confirm').innerHTML = `<span>${escHtml(confirmText)}</span>`;
+        const input = document.getElementById('prompt-modal-input');
+        input.placeholder = placeholder;
+        input.value = '';
+        input.classList.remove('shake');
+        const modal = document.getElementById('prompt-modal');
+        modal.style.display = 'flex';
+        requestAnimationFrame(() => modal.classList.add('in'));
+        setTimeout(() => input.focus(), 90);
+    });
+}
+
+function resolvePrompt(value) {
+    const modal = document.getElementById('prompt-modal');
+    modal.classList.remove('in');
+    setTimeout(() => { modal.style.display = 'none'; }, 180);
+    if (promptResolve) { promptResolve(value); promptResolve = null; }
+}
+
+function submitPromptModal() {
+    const input = document.getElementById('prompt-modal-input');
+    const val = input.value.trim();
+    if (!val) {
+        input.classList.add('shake');
+        setTimeout(() => input.classList.remove('shake'), 400);
+        return;
+    }
+    resolvePrompt(val);
+}
+
+function cancelPromptModal() { resolvePrompt(null); }
+
+/* ============================================================
+   APP BOOTSTRAP
+   ============================================================ */
+window.onload = () => {
+    const saved = localStorage.getItem('chat_token');
+    if (saved) {
+        document.getElementById('auth-panel').style.display = 'none';
+        initializeApp();
+    } else {
+        document.getElementById('auth-panel').style.display = 'flex';
+        document.getElementById('app-container').classList.remove('visible');
+    }
+};
+
+async function initializeApp() {
+    activeToken = localStorage.getItem('chat_token');
+    if (!activeToken) return logout();
+
+    document.getElementById('app-container').classList.add('visible');
+    document.getElementById('chat-panel').classList.add('visible');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinId = urlParams.get('join');
+
+    if (joinId) {
+        window.history.replaceState({}, document.title, "/");
+        await joinServer(joinId);
+    } else {
+        await renderSidebar();
+    }
+}
+
+function logout() {
+    localStorage.removeItem('chat_token');
+    activeToken = '';
+
+    if (ws) { ws.close(); ws = null; }
+
+    const appContainer = document.getElementById('app-container');
+    if (appContainer) appContainer.classList.remove('visible');
+
+    const authPanel = document.getElementById('auth-panel');
+    if (authPanel) authPanel.style.display = 'flex';
+
+    document.getElementById('sidebar-content').innerHTML = '';
+    document.getElementById('messages-container').innerHTML = '';
+}
+
+/* ============================================================
+   SIDEBAR / WORKSPACES / CHANNELS
+   ============================================================ */
+async function renderSidebar() {
+    const sidebar = document.getElementById('sidebar-content');
+
+    try {
+        const wsRes = await fetch('/api/v1/workspaces', {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+        });
+
+        if (wsRes.status === 401 || !wsRes.ok) {
+            throw new Error('Token invalid or expired');
+        }
+
+        const workspaces = await wsRes.json();
+
+        if (!workspaces || workspaces.length === 0) {
+            sidebar.innerHTML = `<div class="sidebar-empty">No workspaces yet.<br>Use the + above to create one.</div>`;
+            return;
+        }
+
+        sidebar.innerHTML = '';
+        let firstChannel = null;
+
+        for (const workspace of workspaces) {
+            const section = document.createElement('div');
+            section.className = 'ws-section';
+
+            const wsHeader = document.createElement('div');
+            wsHeader.className = 'section-label-row';
+
+            const label = document.createElement('p');
+            label.className = 'section-label';
+            label.textContent = workspace.name;
+
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'section-actions';
+
+            const inviteBtn = document.createElement('button');
+            inviteBtn.className = 'btn-icon';
+            inviteBtn.title = `Copy invite link for ${workspace.name}`;
+            inviteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M8 13.3 6.6 14.7a3 3 0 0 0 4.2 4.2l1.5-1.5"/><path d="M16 10.7l1.4-1.4a3 3 0 0 0-4.2-4.2l-1.5 1.5"/></svg>';
+            inviteBtn.onclick = () => copyInviteLink(workspace.id);
+
+            const addBtn = document.createElement('button');
+            addBtn.className = 'btn-icon';
+            addBtn.title = `Add channel to ${workspace.name}`;
+            addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+            addBtn.onclick = () => createNewChannel(workspace.id);
+
+            buttonsDiv.appendChild(inviteBtn);
+            buttonsDiv.appendChild(addBtn);
+
+            wsHeader.appendChild(label);
+            wsHeader.appendChild(buttonsDiv);
+            section.appendChild(wsHeader);
+
+            try {
+                const chRes = await fetch(`/api/v1/workspaces/${workspace.id}/channels`, {
+                    headers: { 'Authorization': `Bearer ${activeToken}` }
+                });
+                const channels = await chRes.json();
+
+                channels.forEach(ch => {
+                    if (!firstChannel) firstChannel = ch;
+
+                    const btn = document.createElement('button');
+                    btn.className = 'channel-item';
+                    btn.id = `ch-${ch.id}`;
+                    btn.innerHTML = `<span class="channel-hash">#</span><span class="channel-name">${escHtml(ch.name)}</span>`;
+                    btn.addEventListener('click', () => joinRoom(ch.id, ch.name));
+                    section.appendChild(btn);
+                });
+            } catch (channelErr) {
+                console.warn(`Failed to load channels for workspace ${workspace.name}`);
+            }
+
+            sidebar.appendChild(section);
+        }
+
+        if (firstChannel) joinRoom(firstChannel.id, firstChannel.name);
+
+    } catch (err) {
+        console.warn("Session ended:", err.message);
+        logout();
+        const authError = document.getElementById('auth-error');
+        const authErrorText = document.getElementById('auth-error-text');
+        if (authError && authErrorText) {
+            authErrorText.textContent = "Session expired. Please sign in again.";
+            authError.style.display = 'flex';
+        }
+    }
+}
+
+async function joinRoom(channelId, channelName) {
+    if (ws) ws.close();
+
+    activeChannelId = channelId;
+    activeChannelName = channelName;
+
+    document.getElementById('channel-name-display').textContent = channelName;
+    document.getElementById('presence-pill').classList.remove('show');
+    setConnectionState('connecting');
+
+    if (window.innerWidth <= 820) toggleSidebar(false);
+
+    document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
+    const activeEl = document.getElementById(`ch-${channelId}`);
+    if (activeEl) activeEl.classList.add('active');
+
+    const container = document.getElementById('messages-container');
+    container.innerHTML = buildLoadingSkeleton();
+
+    try {
+        const res = await fetch(`/api/v1/channels/${channelId}/messages`, {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+        });
+        const history = await res.json();
+
+        container.innerHTML = '';
+
+        if (history && history.length > 0) {
+                container.innerHTML += `<div class="day-divider">Earlier messages</div>`;
+                history.slice().reverse().forEach(msg => {
+                    // -> UPDATED: Pass msg.created_at
+                    appendMessage(msg.content, 'history', msg.user_id, msg.username, msg.created_at);
+                });
+        }
+        else {
+            container.innerHTML = `
+                <div class="state-empty">
+                    <div class="state-empty-icon">
+                        <svg viewBox="0 0 24 24"><path d="M21 14a2 2 0 0 1-2 2H8l-5 4V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <p class="state-heading">Start of #${escHtml(channelName)}</p>
+                    <p class="state-sub">Be the first to send a message</p>
+                </div>`;
+        }
+
+        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        ws = new WebSocket(`${proto}://${window.location.host}/api/v1/ws?token=${activeToken}&channel_id=${channelId}`);
+
+        ws.onopen = () => setConnectionState('live');
+        ws.onclose = () => setConnectionState('offline');
+        ws.onerror = () => console.warn('WebSocket error');
+
+        ws.onmessage = function(event) {
+                const raw = event.data;
+
+                // 1. Handle Online Presence (Raw Strings)
+                if (raw.startsWith("PRESENCE:")) {
+                    updatePresence(raw.replace("PRESENCE:", ""));
+                    return;
+                }
+
+                // 2. Handle Live Chat & Silent Triggers (JSON)
+                try {
+                    const data = JSON.parse(raw);
+                    const emptyEl = container.querySelector('.state-empty');
+                    if (emptyEl) emptyEl.remove();
+
+                    // -> FIXED: Check data.content for the silent trigger!
+                    if (data.content && data.content.startsWith("[POLL_UPDATE=")) {
+                        const match = data.content.match(/\[POLL_UPDATE=(.*?)\]/);
+                        if (match) fetchAndRenderPoll(match[1]); // Re-fetch the live votes!
+                        return; // -> Stop here! Don't print it to the chat!
+                    }
+
+                    // If it's not a silent trigger, render it as a normal message
+                    appendMessage(data.content, 'live', data.user_id, data.username, data.created_at);
+                } catch (e) {
+                    console.error("Failed to parse websocket JSON", e);
+                }
+            };
+
+    } catch (err) {
+        container.innerHTML = `<p style="text-align:center;color:var(--danger);padding:40px 20px;font-size:13.5px;">Failed to load messages.</p>`;
+        setConnectionState('offline');
+    }
+}
+
+function setConnectionState(state) {
+    const badge = document.getElementById('conn-badge');
+    const dot = document.getElementById('conn-dot');
+    const label = document.getElementById('conn-label');
+    badge.classList.remove('connecting', 'offline');
+    dot.classList.remove('is-connecting', 'is-offline');
+
+    if (state === 'live') {
+        label.textContent = 'Live';
+    } else if (state === 'connecting') {
+        badge.classList.add('connecting');
+        dot.classList.add('is-connecting');
+        label.textContent = 'Connecting';
+    } else {
+        badge.classList.add('offline');
+        dot.classList.add('is-offline');
+        label.textContent = 'Offline';
+    }
+}
+
+function updatePresenceUI(activeUsers) {
+    let onlineSec = document.getElementById('online-users-section');
+    const sidebar = document.getElementById('sidebar-content');
+
+    if (!onlineSec) {
+        onlineSec = document.createElement('div');
+        onlineSec.id = 'online-users-section';
+        onlineSec.className = 'ws-section';
+        onlineSec.style.marginTop = 'auto';
+        sidebar.appendChild(onlineSec);
+    }
+
+    const pill = document.getElementById('presence-pill');
+    document.getElementById('presence-count').textContent = `${activeUsers.length} online`;
+    pill.classList.toggle('show', activeUsers.length > 0);
+
+    onlineSec.innerHTML = `
+        <p class="section-label" style="padding:10px 18px 6px;">Online now — ${activeUsers.length}</p>
+        <div class="online-stack">
+            ${activeUsers.map(user => `
+                <div class="online-row">
+                    <div class="online-avatar-wrap">
+                        <div style="width:24px;height:24px;border-radius:6px;background:${getAvatarGradient(user.id)};display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.92);font-weight:700;font-size:10px;">
+                            ${getInitials(user.username || user.id)}
+                        </div>
+                        <span class="signal"></span>
+                    </div>
+                    <span class="online-name">${escHtml(user.username || 'Unknown')}</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function appendMessage(text, type, senderId, username, timestamp) {
+    if (text && text.startsWith('[POLL_UPDATE=')) return;
+    const container = document.getElementById('messages-container');
+
+    const group = document.createElement('div');
+    group.className = 'msg-group';
+
+    // Keeping your custom gradient function!
+    const avatarBg = getAvatarGradient(senderId);
+    const initials = getInitials(username || senderId);
+    const displayName = username || formatId(senderId);
+    const timeLabel = formatTime(timestamp); 
+
+    // -> MEDIA ENGINE: Check if it's an image, a file, a poll, or just normal text
+    let finalContent = `<p class="msg-text" style="margin-top: 4px;">${escHtml(text)}</p>`;
+    
+    if (text.startsWith('[IMG]')) {
+        const imgUrl = text.replace('[IMG]', '');
+        finalContent = `<img src="${imgUrl}" style="max-width: 300px; max-height: 300px; border-radius: 8px; margin-top: 8px; border: 1px solid #334155; cursor: pointer; object-fit: cover;" onclick="window.open('${imgUrl}', '_blank')">`;
+        
+    } else if (text.startsWith('[FILE=')) {
+        const match = text.match(/\[FILE=(.*?)\](.*)/);
+        if (match) {
+            const fileName = match[1];
+            const fileUrl = match[2];
+            finalContent = `
+                <div style="background: #1e293b; padding: 12px; border-radius: 8px; margin-top: 8px; display: inline-flex; align-items: center; gap: 10px; border: 1px solid #334155;">
+                    <span style="font-size: 24px;">📄</span>
+                    <a href="${fileUrl}" target="_blank" style="color: #4ade80; text-decoration: none; font-weight: bold; font-size: 14px;">${escHtml(fileName)}</a>
+                </div>`;
+        }
+        
+    // -> FIXED: This is now safely outside the FILE block!
+    } else if (text.startsWith('[POLL=')) {
+        const match = text.match(/\[POLL=(.*?)\](.*)/);
+        if (match) {
+            const pollId = match[1];
+            finalContent = `<div id="poll-${pollId}" style="background: #1e293b; padding: 16px; border-radius: 10px; margin-top: 8px; border: 1px solid #334155; width: 300px;">Loading poll...</div>`;
+            fetchAndRenderPoll(pollId); // Tell JS to go fetch the votes!
+        }
+    }
+
+    group.innerHTML = `
+        <div class="msg-avatar" style="background:${avatarBg}">${initials}</div>
+        <div class="msg-body">
+            <div class="msg-meta">
+                <span class="msg-sender">${displayName}</span>
+                <span class="msg-time" style="font-size: 11px; color: #64748b; margin-left: 8px;">${timeLabel}</span>
+            </div>
+            ${finalContent} 
+        </div>`;
+
+    container.appendChild(group);
+    container.scrollTop = container.scrollHeight;
+}
+
+function buildLoadingSkeleton() {
+    return Array.from({ length: 4 }, (_, i) => `
+        <div class="skel-row" style="opacity:${0.85 - i * 0.16}">
+            <div class="skel-avatar"></div>
+            <div style="flex:1">
+                <div class="skel-line" style="width:${80 + i * 20}px;height:11px"></div>
+                <div class="skel-line" style="width:${150 + i * 60}px"></div>
+                ${i % 2 === 0 ? `<div class="skel-line" style="width:${90 + i * 30}px"></div>` : ''}
+            </div>
+        </div>`).join('');
+}
+
+/* ============================================================
+   INPUT
+   ============================================================ */
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+function handleKeyPress(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+}
+
+function openPollModal() {
+        const modal = document.getElementById('poll-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+        } else {
+            console.error("Poll modal HTML is missing!");
+        }
+    }
+
+function sendMessage() {
+    const input = document.getElementById('message-input');
+    const text = input.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(text);
+    input.value = '';
+    input.style.height = 'auto';
+    input.focus();
+}
+
+async function handleFileUpload(e) {
+        const file = e.target.files[0];
+        if (!file || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+        // Reset the input so you can upload the same file again if needed
+        document.getElementById('file-input').value = ''; 
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            // 1. Upload to Go Backend
+            const res = await fetch('/api/v1/upload', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${activeToken}` }, // Protect the upload route!
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error("Upload failed");
+            const data = await res.json();
+
+            // 2. Send the WebSocket Notification with Markdown-style tags!
+            let wsPayload = '';
+            if (file.type.startsWith('image/')) {
+                wsPayload = `[IMG]${data.url}`; // e.g., [IMG]/uploads/123.png
+            } else {
+                wsPayload = `[FILE=${data.name}]${data.url}`; // e.g., [FILE=resume.pdf]/uploads/123.pdf
+            }
+            
+            ws.send(wsPayload);
+
+        } catch (err) {
+            alert("Failed to send attachment: " + err.message);
+        }
+    }
+
+
+
+/* ============================================================
+   WORKSPACE / CHANNEL CREATION
+   ============================================================ */
+async function createNewWorkspace() {
+    const name = await showPromptModal({ title: 'New workspace', label: 'Workspace name', placeholder: 'e.g. Product Team', confirmText: 'Create workspace' });
+    if (!name) return;
+
+    try {
+        const res = await fetch('/api/v1/workspaces', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!res.ok) throw new Error('Failed to create workspace');
+
+        await renderSidebar();
+        showToast(`Workspace "${name}" created`, 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function createNewChannel(workspaceId) {
+    const name = await showPromptModal({ title: 'New channel', label: 'Channel name', placeholder: 'e.g. announcements', confirmText: 'Create channel' });
+    if (!name) return;
+
+    try {
+        const res = await fetch(`/api/v1/workspaces/${workspaceId}/channels`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        if (!res.ok) throw new Error('Failed to create channel');
+
+        await renderSidebar();
+        showToast(`Channel "#${name}" created`, 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+/* ============================================================
+   AUTH — tab switching, password visibility, login, register
+   ============================================================ */
+function toggleAuth(mode) {
+    document.getElementById('auth-error').style.display = 'none';
+    const tabs = document.getElementById('auth-tabs');
+    if (mode === 'register') {
+        tabs.classList.add('mode-register');
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('register-form').style.display = 'flex';
+        document.getElementById('auth-heading').textContent = 'Create your account';
+        document.getElementById('auth-subtitle').textContent = 'Set up a workspace and start collaborating.';
+    } else {
+        tabs.classList.remove('mode-register');
+        document.getElementById('register-form').style.display = 'none';
+        document.getElementById('login-form').style.display = 'flex';
+        document.getElementById('auth-heading').textContent = 'Welcome back';
+        document.getElementById('auth-subtitle').textContent = 'Sign in to get back to your workspaces.';
+    }
+}
+
+function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    btn.innerHTML = isHidden
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M2 12s3.6-7 10-7c1.4 0 2.7.27 3.8.74M21.6 14.5C20.2 16.9 17.3 17.5 12 17.5c-6.4 0-10-7-10-7"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+function setSubmitLoading(buttonId, labelId, loading, idleText) {
+    const btn = document.getElementById(buttonId);
+    const label = document.getElementById(labelId);
+    btn.disabled = loading;
+    label.innerHTML = loading
+        ? `<span class="spinner"></span> Please wait…`
+        : idleText;
+}
+
+async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('auth-error');
+    const errorText = document.getElementById('auth-error-text');
+
+    setSubmitLoading('login-submit', 'login-submit-label', true);
+
+    try {
+        const res = await fetch('/api/v1/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        if (!res.ok) throw new Error("Invalid email or password");
+
+        const data = await res.json();
+        const token = data.token;
+
+        localStorage.setItem('chat_token', token);
+        errorEl.style.display = 'none';
+        document.getElementById('auth-panel').style.display = 'none';
+        initializeApp();
+    } catch (err) {
+        errorText.textContent = err.message;
+        errorEl.style.display = 'flex';
+    } finally {
+        setSubmitLoading('login-submit', 'login-submit-label', false, 'Sign in');
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const username = document.getElementById('reg-username').value;
+    const email = document.getElementById('reg-email').value;
+    const password = document.getElementById('reg-password').value;
+    const errorEl = document.getElementById('auth-error');
+    const errorText = document.getElementById('auth-error-text');
+
+    setSubmitLoading('register-submit', 'register-submit-label', true);
+
+    try {
+        const regRes = await fetch('/api/v1/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password })
+        });
+
+        if (!regRes.ok) throw new Error("Couldn't create account — that email may already be taken");
+
+        const loginRes = await fetch('/api/v1/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+
+        if (!loginRes.ok) throw new Error("Account created, but auto sign-in failed. Try signing in manually.");
+
+        const data = await loginRes.json();
+        const token = data.token;
+
+        localStorage.setItem('chat_token', token);
+        errorEl.style.display = 'none';
+        document.getElementById('auth-panel').style.display = 'none';
+        initializeApp();
+
+    } catch (err) {
+        errorText.textContent = err.message;
+        errorEl.style.display = 'flex';
+    } finally {
+        setSubmitLoading('register-submit', 'register-submit-label', false, 'Create account');
+    }
+}
+
+/* ============================================================
+   DISCOVER & INVITES
+   ============================================================ */
+async function openDiscover() {
+    const modal = document.getElementById('discover-modal');
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => modal.classList.add('in'));
+
+    const list = document.getElementById('discover-list');
+    list.innerHTML = '<p class="discover-empty">Loading communities…</p>';
+
+    try {
+        const res = await fetch('/api/v1/discover', { headers: { 'Authorization': `Bearer ${activeToken}` } });
+        const servers = await res.json();
+
+        if (!servers || servers.length === 0) {
+            list.innerHTML = '<p class="discover-empty">No public communities right now.</p>';
+            return;
+        }
+
+        list.innerHTML = servers.map(s => `
+            <div class="discover-row">
+                <div class="discover-avatar" style="background:${getAvatarGradient(s.id || s.name)}">${getInitials(s.name)}</div>
+                <span class="discover-name">${escHtml(s.name)}</span>
+                <button class="discover-join-btn" onclick="joinServer('${s.id}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                    Join
+                </button>
+            </div>
+        `).join('');
+    } catch (err) {
+        list.innerHTML = '<p class="discover-error">Failed to load communities.</p>';
+    }
+}
+
+function closeDiscover() {
+    const modal = document.getElementById('discover-modal');
+    modal.classList.remove('in');
+    setTimeout(() => { modal.style.display = 'none'; }, 180);
+}
+
+async function joinServer(workspaceId) {
+    try {
+        const res = await fetch(`/api/v1/workspaces/${workspaceId}/join`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+        });
+        if (!res.ok) throw new Error("Failed to join");
+
+        closeDiscover();
+        await renderSidebar();
+        showToast('Joined workspace', 'success');
+    } catch (err) {
+        showToast("Couldn't join — you might already be a member", 'error');
+    }
+}
+
+function copyInviteLink(workspaceId) {
+    const link = `${window.location.origin}/?join=${workspaceId}`;
+    navigator.clipboard.writeText(link);
+    showToast('Invite link copied to clipboard', 'success');
+}
+
+/* ============================================================
+   MOBILE SIDEBAR
+   ============================================================ */
+function toggleSidebar(open) {
+    document.getElementById('sidebar').classList.toggle('open', open);
+    document.getElementById('sidebar-backdrop').classList.toggle('open', open);
+}
+
+// Helper to format timestamps like WhatsApp (e.g., "10:45 AM")
+    function formatTime(isoString) {
+        if (!isoString) return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const d = new Date(isoString);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // --- POLL ENGINE ---
+
+    // --- POLISHED POLL ENGINE ---
+
+    function openPollModal() {
+        document.getElementById('poll-modal').style.display = 'flex';
+    }
+
+    function closePollModal() {
+        document.getElementById('poll-modal').style.display = 'none';
+        document.getElementById('poll-q').value = '';
+        
+        // Reset options back to the default 2 empty inputs
+        const container = document.getElementById('poll-options-container');
+        container.innerHTML = `
+            <label style="color: #cbd5e1; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;">OPTIONS</label>
+            <div class="poll-option-wrapper" style="display: flex; gap: 8px;">
+                <input class="poll-opt-input" placeholder="Option 1" style="flex: 1; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+            </div>
+            <div class="poll-option-wrapper" style="display: flex; gap: 8px;">
+                <input class="poll-opt-input" placeholder="Option 2" style="flex: 1; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+            </div>
+        `;
+    }
+
+    function addPollOption() {
+        const container = document.getElementById('poll-options-container');
+        const currentCount = container.querySelectorAll('.poll-opt-input').length;
+        
+        if (currentCount >= 10) return alert("Maximum 10 options allowed.");
+
+        const div = document.createElement('div');
+        div.className = 'poll-option-wrapper';
+        div.style.display = 'flex';
+        div.style.gap = '8px';
+        
+        // Notice we add a Red 'X' button so they can delete the extra options!
+        div.innerHTML = `
+            <input class="poll-opt-input" placeholder="Option ${currentCount + 1}" style="flex: 1; padding: 14px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 8px; outline: none; font-size: 15px; box-sizing: border-box;">
+            <button onclick="this.parentElement.remove()" style="background: #334155; border: none; color: #ef4444; width: 48px; border-radius: 8px; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center;" title="Remove option">&times;</button>
+        `;
+        container.appendChild(div);
+    }
+
+    async function sendPoll() {
+        const q = document.getElementById('poll-q').value.trim();
+        
+        // 1. Grab EVERY input field dynamically
+        const optionInputs = document.querySelectorAll('.poll-opt-input');
+        
+        // 2. Extract their values, and filter out any empty ones!
+        const options = Array.from(optionInputs)
+            .map(input => input.value.trim())
+            .filter(val => val !== '');
+
+        // 3. Validation
+        if (!q) return alert("Please enter a question.");
+        if (options.length < 2) return alert("Please provide at least 2 valid options.");
+
+        // 4. Send the dynamic array to your Go Backend!
+        try {
+            const res = await fetch('/api/v1/polls', {
+                method: 'POST',
+                headers: {'Authorization': `Bearer ${activeToken}`, 'Content-Type': 'application/json'},
+                body: JSON.stringify({question: q, options: options})
+            });
+            
+            if (!res.ok) throw new Error("Failed to create poll");
+            const data = await res.json();
+
+            // Broadcast the Poll ID to everyone in the channel
+            ws.send(`[POLL=${data.id}]${q}`);
+            closePollModal();
+
+        } catch (err) {
+            alert(err.message);
+        }
+    }
+
+    async function fetchAndRenderPoll(pollId) {
+        const res = await fetch(`/api/v1/polls/${pollId}`, {headers:{'Authorization': `Bearer ${activeToken}`}});
+        const poll = await res.json();
+        const div = document.getElementById(`poll-${pollId}`);
+        if (!div) return;
+
+        let html = `<div style="font-weight: bold; color: white; margin-bottom: 15px; font-size: 15px;">📊 ${escHtml(poll.question)}</div>`;
+
+        poll.options.forEach(opt => {
+            const percent = poll.total_votes > 0 ? Math.round((opt.votes / poll.total_votes) * 100) : 0;
+            const bg = opt.has_voted ? '#0ea5e9' : '#334155'; // Highlight blue if voted
+            html += `
+                <div onclick="votePoll('${pollId}', '${opt.id}')" style="background: ${bg}; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; cursor: pointer; position: relative; overflow: hidden; border: 1px solid #475569; transition: 0.2s;">
+                    <div style="position: absolute; top: 0; left: 0; bottom: 0; width: ${percent}%; background: rgba(255,255,255,0.15); z-index: 1;"></div>
+                    <div style="display: flex; justify-content: space-between; position: relative; z-index: 2; font-size: 14px;">
+                        <span style="color: white; font-weight: 500;">${escHtml(opt.text)}</span>
+                        <span style="color: #cbd5e1; font-weight: bold;">${percent}%</span>
+                    </div>
+                </div>
+            `;
+        });
+        html += `<div style="font-size: 11px; color: #94a3b8; margin-top: 8px; text-align: right;">${poll.total_votes} votes</div>`;
+        div.innerHTML = html;
+    }
+
+    async function votePoll(pollId, optionId) {
+        await fetch(`/api/v1/polls/${pollId}/vote`, {
+            method: 'POST',
+            headers: {'Authorization': `Bearer ${activeToken}`, 'Content-Type': 'application/json'},
+            body: JSON.stringify({option_id: optionId})
+        });
+        // 1. Instantly update UI for the clicker
+        fetchAndRenderPoll(pollId); 
+        // 2. Tell everyone else in the WebSocket to silently re-fetch their UI!
+        ws.send(`[POLL_UPDATE=${pollId}]`);
+    }
+
+
+</script>
+</body>
+</html>

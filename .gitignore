@@ -1,0 +1,18 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Environment Variables (NEVER push your database passwords to GitHub!)
+.env
+
+# User Uploads (Don't push user-generated images and PDFs!)
+uploads/
+
+# IDE and OS Files
+.vscode/
+.idea/
+.DS_Store
