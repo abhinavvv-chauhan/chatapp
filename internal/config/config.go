@@ -17,6 +17,7 @@ type Config struct {
 
 func LoadConfig() (Config, error) {
 	viper.SetConfigFile(".env")
+	viper.ReadInConfig()
 	viper.AutomaticEnv()
 
 	viper.SetDefault("ENVIRONMENT", "development")
