@@ -16,11 +16,17 @@ type Config struct {
 
 
 func LoadConfig() (Config, error) {
-	var config Config 
+	var config Config
 
 	viper.SetConfigFile(".env")
-
 	viper.AutomaticEnv()
+
+	viper.BindEnv("DATABASE_URL")
+	viper.BindEnv("JWT_SECRET")
+	viper.BindEnv("REDIS_URL")
+	viper.BindEnv("SERVER_PORT")
+	viper.BindEnv("PORT")
+	viper.BindEnv("ENVIRONMENT")
 
 	err := viper.ReadInConfig()
 	if err != nil {
