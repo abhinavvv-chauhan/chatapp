@@ -888,7 +888,7 @@ body {
           <button class="input-tool-btn" onclick="document.getElementById('file-input').click()" title="Attach file" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.4 12.5 21a5 5 0 0 1-7-7l8.7-8.7a3.5 3.5 0 0 1 5 5L10.6 18.7a2 2 0 0 1-3-3l7-7"/></svg>
           </button>
-          <input type="file" id="file-input" style="display:none" onchange="handleFileUpload(event)">
+          <input type="file" id="file-input" accept="image/*, application/pdf" onchange="handleFileUpload(this.files[0])" hidden>
  
           <button class="input-tool-btn" onclick="openPollModal()" title="Create poll" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19V11"/><path d="M12 19V5"/><path d="M19 19v-7"/></svg>
@@ -1410,19 +1410,16 @@ function appendMessage(text, type, senderId, username, timestamp) {
     const group = document.createElement('div');
     group.className = 'msg-group';
 
-    // Keeping your custom gradient function!
     const avatarBg = getAvatarGradient(senderId);
     const initials = getInitials(username || senderId);
     const displayName = username || formatId(senderId);
     const timeLabel = formatTime(timestamp); 
 
-    // -> MEDIA ENGINE: Check if it's an image, a file, a poll, or just normal text
     let finalContent = `<p class="msg-text" style="margin-top: 4px;">${escHtml(text)}</p>`;
     
     if (text.startsWith('[IMG]')) {
         const imgUrl = text.replace('[IMG]', '');
         finalContent = `<img src="${imgUrl}" style="max-width: 300px; max-height: 300px; border-radius: 8px; margin-top: 8px; border: 1px solid #334155; cursor: pointer; object-fit: cover;" onclick="window.open('${imgUrl}', '_blank')">`;
-        
     } else if (text.startsWith('[FILE=')) {
         const match = text.match(/\[FILE=(.*?)\](.*)/);
         if (match) {
@@ -1434,14 +1431,22 @@ function appendMessage(text, type, senderId, username, timestamp) {
                     <a href="${fileUrl}" target="_blank" style="color: #4ade80; text-decoration: none; font-weight: bold; font-size: 14px;">${escHtml(fileName)}</a>
                 </div>`;
         }
-        
-    // -> FIXED: This is now safely outside the FILE block!
     } else if (text.startsWith('[POLL=')) {
         const match = text.match(/\[POLL=(.*?)\](.*)/);
         if (match) {
             const pollId = match[1];
             finalContent = `<div id="poll-${pollId}" style="background: #1e293b; padding: 16px; border-radius: 10px; margin-top: 8px; border: 1px solid #334155; width: 300px;">Loading poll...</div>`;
-            fetchAndRenderPoll(pollId); // Tell JS to go fetch the votes!
+            fetchAndRenderPoll(pollId); 
+        }
+    } else if (text.startsWith('http') && text.includes('cloudinary.com')) {
+        if (text.toLowerCase().endsWith('.pdf')) {
+            finalContent = `
+                <div style="background: #1e293b; padding: 12px; border-radius: 8px; margin-top: 8px; display: inline-flex; align-items: center; gap: 10px; border: 1px solid #334155;">
+                    <span style="font-size: 24px;">📄</span>
+                    <a href="${text}" target="_blank" style="color: #38bdf8; text-decoration: none; font-weight: bold; font-size: 14px;">Open PDF Document</a>
+                </div>`;
+        } else {
+            finalContent = `<img src="${text}" style="max-width: 300px; max-height: 300px; border-radius: 8px; margin-top: 8px; border: 1px solid #334155; cursor: pointer; object-fit: cover;" onclick="window.open('${text}', '_blank')">`;
         }
     }
 
