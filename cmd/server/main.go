@@ -14,6 +14,7 @@ import (
 	"github.com/abhinavvv-chauhan/chat-app/internal/repository"
 	"github.com/abhinavvv-chauhan/chat-app/internal/repository/query"
 	"github.com/abhinavvv-chauhan/chat-app/internal/server"
+	"github.com/abhinavvv-chauhan/chat-app/internal/worker"
 	"github.com/abhinavvv-chauhan/chat-app/internal/ws"
 )
 
@@ -40,7 +41,10 @@ func main() {
 
 	queries := query.New(dbPool)
 
-	wsHub := ws.NewHub()
+	workerPool := worker.NewPool(3, 100)
+	workerPool.Start()
+
+	wsHub := ws.NewHub(workerPool)
 	go wsHub.Run()
 
 	router := server.NewServer()

@@ -1,6 +1,10 @@
 package ws
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/abhinavvv-chauhan/chat-app/internal/worker"
+)
 
 type BroadcastMessage struct {
 	ChannelID string
@@ -12,14 +16,16 @@ type Hub struct {
 	broadcast  chan BroadcastMessage
 	register   chan *Client
 	unregister chan *Client
+	WorkerPool *worker.Pool
 }
 
-func NewHub() *Hub {
+func NewHub(wp *worker.Pool) *Hub {
 	return &Hub{
 		broadcast:  make(chan BroadcastMessage),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
+		WorkerPool: wp,
 	}
 }
 
@@ -62,7 +68,7 @@ func (h *Hub) broadcastPresence(channelID string) {
 
 	var pairs []string
 	for id, name := range userMap {
-		pairs = append(pairs, id+":"+name) 
+		pairs = append(pairs, id+":"+name)
 	}
 
 	payload := []byte("PRESENCE:" + strings.Join(pairs, ","))
