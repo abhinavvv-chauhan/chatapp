@@ -1505,39 +1505,51 @@ function sendMessage() {
     input.focus();
 }
 
-async function handleFileUpload(e) {
-        const file = e.target.files[0];
-        if (!file || !ws || ws.readyState !== WebSocket.OPEN) return;
+async function handleFileUpload(file) {
+        if (!file) return;
 
-        // Reset the input so you can upload the same file again if needed
-        document.getElementById('file-input').value = ''; 
-
-        const formData = new FormData();
-        formData.append("file", file);
+        // Optional: Show a little loading text in the chat input while it uploads
+        const originalPlaceholder = document.getElementById('chat-input').placeholder;
+        document.getElementById('chat-input').placeholder = "Uploading to cloud...";
+        document.getElementById('chat-input').disabled = true;
 
         try {
-            // 1. Upload to Go Backend
-            const res = await fetch('/api/v1/upload', {
+            // 1. Get the cryptographic signature from your Go Backend
+            const sigRes = await fetch('/api/v1/upload/signature', {
+                headers: { 'Authorization': `Bearer ${activeToken}` }
+            });
+            if (!sigRes.ok) throw new Error("Failed to get upload signature");
+            const sigData = await sigRes.json();
+
+            // 2. Package the file with the signature
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('api_key', sigData.api_key);
+            formData.append('timestamp', sigData.timestamp);
+            formData.append('signature', sigData.signature);
+
+            // 3. Upload directly to Cloudinary (Bypassing your Go Server completely!)
+            const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${sigData.cloud_name}/auto/upload`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${activeToken}` }, // Protect the upload route!
                 body: formData
             });
             
-            if (!res.ok) throw new Error("Upload failed");
-            const data = await res.json();
+            const uploadData = await uploadRes.json();
+            if (uploadData.error) throw new Error(uploadData.error.message);
 
-            // 2. Send the WebSocket Notification with Markdown-style tags!
-            let wsPayload = '';
-            if (file.type.startsWith('image/')) {
-                wsPayload = `[IMG]${data.url}`; // e.g., [IMG]/uploads/123.png
-            } else {
-                wsPayload = `[FILE=${data.name}]${data.url}`; // e.g., [FILE=resume.pdf]/uploads/123.pdf
-            }
+            // 4. Broadcast the permanent, blazing-fast CDN link to the chat room!
+            const fileUrl = uploadData.secure_url;
             
-            ws.send(wsPayload);
+            // Note: Adjust this line to match however your app formats media messages!
+            // (e.g., if you use markdown or a custom tag like [IMAGE=url])
+            ws.send(fileUrl); 
 
         } catch (err) {
-            alert("Failed to send attachment: " + err.message);
+            alert("Upload failed: " + err.message);
+        } finally {
+            // Reset the input box
+            document.getElementById('chat-input').placeholder = originalPlaceholder;
+            document.getElementById('chat-input').disabled = false;
         }
     }
 

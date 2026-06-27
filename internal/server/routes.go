@@ -2,8 +2,7 @@ package server
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
+	
 
 	"github.com/abhinavvv-chauhan/chat-app/internal/handler"
 	"github.com/abhinavvv-chauhan/chat-app/internal/repository/query"
@@ -24,7 +23,7 @@ func SetupRoutes(r *chi.Mux, queries *query.Queries, jwtSecret string, hub *ws.H
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthGuard(jwtSecret))
 			
-			r.Post("/upload", handler.UploadFile)
+			r.Get("/upload/signature", handler.GetCloudinarySignature)
 			
 			workspaceHandler := handler.NewWorkspaceHandler(queries)
 			r.Post("/workspaces", workspaceHandler.CreateWorkspaceWithGeneralChannel)
@@ -50,9 +49,6 @@ func SetupRoutes(r *chi.Mux, queries *query.Queries, jwtSecret string, hub *ws.H
 		})
 	})
 
-	workDir, _ := os.Getwd()
-	filesDir := http.Dir(filepath.Join(workDir, "uploads"))
-	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(filesDir)))
 
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, "web/index.html")
