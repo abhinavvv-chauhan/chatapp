@@ -1459,6 +1459,12 @@ function appendMessage(text, type, senderId, username, timestamp) {
     container.scrollTop = container.scrollHeight;
 }
 
+function updatePresence(usersString) {
+        // We will build the visual UI for this in Phase 6! 
+        // For now, this safely catches the data so the WebSocket doesn't crash.
+        console.log("Live presence update:", usersString);
+}
+
 function buildLoadingSkeleton() {
     return Array.from({ length: 4 }, (_, i) => `
         <div class="skel-row" style="opacity:${0.85 - i * 0.16}">
@@ -1506,52 +1512,64 @@ function sendMessage() {
 }
 
 async function handleFileUpload(file) {
-        if (!file) return;
+    if (!file) return;
 
-        // Optional: Show a little loading text in the chat input while it uploads
-        const originalPlaceholder = document.getElementById('chat-input').placeholder;
-        document.getElementById('chat-input').placeholder = "Uploading to cloud...";
-        document.getElementById('chat-input').disabled = true;
+    // Cache the input element using the correct ID: message-input
+    const inputEl = document.getElementById('message-input');
+    let originalPlaceholder = "";
 
-        try {
-            // 1. Get the cryptographic signature from your Go Backend
-            const sigRes = await fetch('/api/v1/upload/signature', {
-                headers: { 'Authorization': `Bearer ${activeToken}` }
-            });
-            if (!sigRes.ok) throw new Error("Failed to get upload signature");
-            const sigData = await sigRes.json();
+    // Safely update the placeholder and disable input during the upload
+    if (inputEl) {
+        originalPlaceholder = inputEl.placeholder;
+        inputEl.placeholder = "Uploading to cloud...";
+        inputEl.disabled = true;
+    }
 
-            // 2. Package the file with the signature
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('api_key', sigData.api_key);
-            formData.append('timestamp', sigData.timestamp);
-            formData.append('signature', sigData.signature);
+    try {
+        // 1. Get the cryptographic signature from your Go Backend
+        const sigRes = await fetch('/api/v1/upload/signature', {
+            headers: { 'Authorization': `Bearer ${activeToken}` }
+        });
+        if (!sigRes.ok) throw new Error("Failed to get upload signature");
+        const sigData = await sigRes.json();
 
-            // 3. Upload directly to Cloudinary (Bypassing your Go Server completely!)
-            const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${sigData.cloud_name}/auto/upload`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            const uploadData = await uploadRes.json();
-            if (uploadData.error) throw new Error(uploadData.error.message);
+        // 2. Package the file with the signature
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('api_key', sigData.api_key);
+        formData.append('timestamp', sigData.timestamp);
+        formData.append('signature', sigData.signature);
 
-            // 4. Broadcast the permanent, blazing-fast CDN link to the chat room!
-            const fileUrl = uploadData.secure_url;
-            
-            // Note: Adjust this line to match however your app formats media messages!
-            // (e.g., if you use markdown or a custom tag like [IMAGE=url])
+        // 3. Upload directly to Cloudinary (Bypassing your Go Server completely!)
+        const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${sigData.cloud_name}/auto/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const uploadData = await uploadRes.json();
+        if (uploadData.error) throw new Error(uploadData.error.message);
+
+        // 4. Broadcast the permanent, blazing-fast CDN link to the chat room!
+        const fileUrl = uploadData.secure_url;
+        
+        // Broadcasts the direct Cloudinary URL over WebSockets
+        if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(fileUrl); 
+        } else {
+            throw new Error("WebSocket connection is not active");
+        }
 
-        } catch (err) {
-            alert("Upload failed: " + err.message);
-        } finally {
-            // Reset the input box
-            document.getElementById('chat-input').placeholder = originalPlaceholder;
-            document.getElementById('chat-input').disabled = false;
+    } catch (err) {
+        alert("Upload failed: " + err.message);
+    } finally {
+        // Reset the input box state cleanly
+        if (inputEl) {
+            inputEl.placeholder = originalPlaceholder || "Type a message...";
+            inputEl.disabled = false;
+            inputEl.focus(); // Returns focus so the user can keep typing immediately
         }
     }
+}
 
 
 
