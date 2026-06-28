@@ -1816,16 +1816,20 @@ async function openDiscover() {
             return;
         }
 
-        list.innerHTML = servers.map(s => `
-            <div class="discover-row">
-                <div class="discover-avatar" style="background:${getAvatarGradient(s.id || s.name)}">${getInitials(s.name)}</div>
-                <span class="discover-name">${escHtml(s.name)}</span>
-                <button class="discover-join-btn" onclick="joinServer('${s.id}')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                    Join
-                </button>
-            </div>
-        `).join('');
+        list.innerHTML = servers.map(s => {
+            const sId = s.ID || s.id;
+            const sName = s.Name || s.name;
+            return `
+                <div class="discover-row">
+                    <div class="discover-avatar" style="background:${getAvatarGradient(sId || sName)}">${getInitials(sName)}</div>
+                    <span class="discover-name">${escHtml(sName)}</span>
+                    <button class="discover-join-btn" onclick="joinServer('${sId}')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                        Join
+                    </button>
+                </div>
+            `;
+        }).join('');
     } catch (err) {
         list.innerHTML = '<p class="discover-error">Failed to load communities.</p>';
     }
