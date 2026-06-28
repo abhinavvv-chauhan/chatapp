@@ -49,7 +49,11 @@ func SetupRoutes(r *chi.Mux, queries *query.Queries, jwtSecret string, hub *ws.H
 		})
 	})
 
-
+	r.Get("/sw.js", func(w http.ResponseWriter, req *http.Request) {
+        w.Header().Set("Content-Type", "application/javascript")
+        http.ServeFile(w, req, "web/sw.js")
+    })
+	
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		http.ServeFile(w, req, "web/index.html")
 	})
