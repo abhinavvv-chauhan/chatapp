@@ -1651,7 +1651,10 @@
         const res = await fetch(`/api/v1/channels/${activeChannelId}/catchup`, {
           headers: { 'Authorization': `Bearer ${activeToken}` }
         });
-        if (!res.ok) throw new Error('Failed to fetch summary');
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || 'Failed to fetch summary');
+        }
         const data = await res.json();
         
         // Render results
@@ -1687,7 +1690,7 @@
         document.getElementById('ai-loading').style.display = 'none';
         document.getElementById('ai-results').style.display = 'block';
       } catch(err) {
-        document.getElementById('ai-loading').innerHTML = `<p style="color:#ef4444;">Error generating summary.</p>`;
+        document.getElementById('ai-loading').innerHTML = `<p style="color:#ef4444;">Error: ${escHtml(err.message)}</p>`;
       }
     }
 
