@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -53,19 +53,22 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 
 	apiKey := viper.GetString("GEMINI_API_KEY")
 	if apiKey == "" {
-		http.Error(w, "Gemini API key is not configured in .env", http.StatusInternalServerError)
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if apiKey == "" {
+		http.Error(w, "Gemini API key is not configured in .env or environment variables", http.StatusInternalServerError)
 		return
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
-		http.Error(w, "Failed to initialize AI", http.StatusInternalServerError)
+		http.Error(w, "Failed to initialize AI client: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-flash-latest")
+	model := client.GenerativeModel("gemini-1.5-flash")
 	model.ResponseMIMEType = "application/json"
 	
 	systemPrompt := genai.Text("You are an AI assistant in a chat app. The user has been offline and missed the provided chat transcript. Summarize the conversation into three JSON fields: 'threads' (array of strings, summarizing topics), 'action_items' (array of objects with 'assignee' (string) and 'task' (string)), and 'decisions' (array of strings of finalized conclusions). Respond ONLY with valid JSON matching this schema.")
@@ -76,7 +79,7 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 	resp, err := model.GenerateContent(ctx, genai.Text(transcript))
 	if err != nil {
 		fmt.Printf("Gemini API error: %v\n", err)
-		http.Error(w, "Failed to generate summary", http.StatusInternalServerError)
+		http.Error(w, "Failed to generate summary: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
