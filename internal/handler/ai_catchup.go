@@ -1,19 +1,20 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/abhinavvv-chauhan/chat-app/internal/server/middleware"
 	"github.com/go-chi/chi/v5"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/jackc/pgx/v5/pgtype"
-	"google.golang.org/api/option"
+	"github.com/spf13/viper"
 )
 
 type cachedSummary struct {
@@ -73,56 +74,76 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 	}
 	cacheMutex.Unlock()
 
-	apiKey := viper.GetString("GEMINI_API_KEY")
+	apiKey := viper.GetString("GROQ_API_KEY")
 	if apiKey == "" {
-		apiKey = os.Getenv("GEMINI_API_KEY")
+		apiKey = os.Getenv("GROQ_API_KEY")
 	}
 	if apiKey == "" {
-		http.Error(w, "Gemini API key is not configured in .env or environment variables", http.StatusInternalServerError)
+		http.Error(w, "GROQ_API_KEY is not configured in .env or environment variables", http.StatusInternalServerError)
 		return
 	}
 
-	ctx := r.Context()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	systemPrompt := "You are an AI assistant in a chat app. The user has been offline and missed the provided chat transcript. Summarize the conversation into three JSON fields: 'threads' (array of strings, summarizing topics), 'action_items' (array of objects with 'assignee' (string) and 'task' (string)), and 'decisions' (array of strings of finalized conclusions). Respond ONLY with valid JSON matching this schema."
+
+	reqBody := map[string]interface{}{
+		"model": "llama3-8b-8192",
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": transcript},
+		},
+		"response_format": map[string]string{"type": "json_object"},
+	}
+	jsonBody, _ := json.Marshal(reqBody)
+
+	req, err := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		http.Error(w, "Failed to initialize AI client: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to create request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer client.Close()
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
 
-	model := client.GenerativeModel("gemini-3.5-flash")
-	model.ResponseMIMEType = "application/json"
-	
-	systemPrompt := genai.Text("You are an AI assistant in a chat app. The user has been offline and missed the provided chat transcript. Summarize the conversation into three JSON fields: 'threads' (array of strings, summarizing topics), 'action_items' (array of objects with 'assignee' (string) and 'task' (string)), and 'decisions' (array of strings of finalized conclusions). Respond ONLY with valid JSON matching this schema.")
-	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{systemPrompt},
-	}
-
-	resp, err := model.GenerateContent(ctx, genai.Text(transcript))
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("Gemini API error: %v\n", err)
-		http.Error(w, "Failed to generate summary: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Failed to call Groq API: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		http.Error(w, "Groq API error: "+string(bodyBytes), http.StatusInternalServerError)
 		return
 	}
 
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		http.Error(w, "Empty response from AI", http.StatusInternalServerError)
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		http.Error(w, "Failed to decode Groq response", http.StatusInternalServerError)
 		return
 	}
 
-	part := resp.Candidates[0].Content.Parts[0]
-	if txt, ok := part.(genai.Text); ok {
-		cacheMutex.Lock()
-		summaryCache[cacheKey] = cachedSummary{
-			Summary:   string(txt),
-			ExpiresAt: time.Now().Add(5 * time.Minute),
-		}
-		cacheMutex.Unlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(txt))
+	if len(result.Choices) == 0 {
+		http.Error(w, "Empty response from Groq", http.StatusInternalServerError)
 		return
 	}
 
-	http.Error(w, "Invalid response from AI", http.StatusInternalServerError)
+	txt := result.Choices[0].Message.Content
+
+	cacheMutex.Lock()
+	summaryCache[cacheKey] = cachedSummary{
+		Summary:   txt,
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+	}
+	cacheMutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(txt))
 }
