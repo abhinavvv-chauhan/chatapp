@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/abhinavvv-chauhan/chat-app/internal/server/middleware"
@@ -12,6 +14,16 @@ import (
 	"github.com/google/generative-ai-go/genai"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/api/option"
+)
+
+type cachedSummary struct {
+	Summary   string
+	ExpiresAt time.Time
+}
+
+var (
+	summaryCache = make(map[string]cachedSummary)
+	cacheMutex   sync.Mutex
 )
 
 func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +62,16 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 		transcriptBuilder.WriteString(fmt.Sprintf("[%s] @%s: %s\n", msg.CreatedAt.Time.Format("15:04"), msg.Username, msg.Content))
 	}
 	transcript := transcriptBuilder.String()
+
+	cacheKey := fmt.Sprintf("%s:%s", channelID, userIDStr)
+	cacheMutex.Lock()
+	if c, ok := summaryCache[cacheKey]; ok && time.Now().Before(c.ExpiresAt) {
+		cacheMutex.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(c.Summary))
+		return
+	}
+	cacheMutex.Unlock()
 
 	apiKey := viper.GetString("GEMINI_API_KEY")
 	if apiKey == "" {
@@ -90,6 +112,13 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 
 	part := resp.Candidates[0].Content.Parts[0]
 	if txt, ok := part.(genai.Text); ok {
+		cacheMutex.Lock()
+		summaryCache[cacheKey] = cachedSummary{
+			Summary:   string(txt),
+			ExpiresAt: time.Now().Add(5 * time.Minute),
+		}
+		cacheMutex.Unlock()
+
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(txt))
 		return
