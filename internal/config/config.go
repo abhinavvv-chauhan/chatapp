@@ -11,7 +11,8 @@ type Config struct {
 	ServerPort  string `mapstructure:"SERVER_PORT"`
 	DBUrl       string `mapstructure:"DATABASE_URL"`
 	RedisUrl    string `mapstructure:"REDIS_URL"`
-	JWTSecret   string `mapstructure:"JWT_SECRET"` 
+	JWTSecret      string `mapstructure:"JWT_SECRET"` 
+	GeminiAPIKey   string `mapstructure:"GEMINI_API_KEY"` 
 }
 
 
@@ -27,6 +28,7 @@ func LoadConfig() (Config, error) {
 	viper.BindEnv("SERVER_PORT")
 	viper.BindEnv("PORT")
 	viper.BindEnv("ENVIRONMENT")
+	viper.BindEnv("GEMINI_API_KEY")
 
 	err := viper.ReadInConfig()
 	if err != nil {

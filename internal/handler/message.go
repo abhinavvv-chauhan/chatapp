@@ -33,7 +33,14 @@ func (h *MessageHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages, err := h.queries.GetMessagesWithUser(r.Context(), channelUUID, limit, 0)
+	offset := int32(0)
+	if offsetParam := r.URL.Query().Get("offset"); offsetParam != "" {
+		if parsed, err := strconv.Atoi(offsetParam); err == nil && parsed >= 0 {
+			offset = int32(parsed)
+		}
+	}
+
+	messages, err := h.queries.GetMessagesWithUser(r.Context(), channelUUID, limit, offset)
 	if err != nil {
 		http.Error(w, "Failed to fetch messages", http.StatusInternalServerError)
 		return
@@ -41,6 +48,30 @@ func (h *MessageHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 
 	if messages == nil {
 		messages = []query.MessageWithUser{}
+	} else if len(messages) > 0 {
+		var msgIDs []pgtype.UUID
+		for _, m := range messages {
+			msgIDs = append(msgIDs, m.ID)
+		}
+		
+		reactions, _ := h.queries.GetReactions(r.Context(), msgIDs)
+		
+		// Map reactions to messages
+		reactionMap := make(map[pgtype.UUID][]query.ReactionJSON)
+		for _, r := range reactions {
+			reactionMap[r.MessageID] = append(reactionMap[r.MessageID], query.ReactionJSON{
+				Emoji:  r.Emoji,
+				UserID: r.UserID,
+			})
+		}
+		
+		for i := range messages {
+			if r, ok := reactionMap[messages[i].ID]; ok {
+				messages[i].Reactions = r
+			} else {
+				messages[i].Reactions = []query.ReactionJSON{}
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

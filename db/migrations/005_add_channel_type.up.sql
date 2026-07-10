@@ -1,0 +1,1 @@
+ALTER TABLE channels ADD COLUMN channel_type VARCHAR(50) DEFAULT 'text' NOT NULL;

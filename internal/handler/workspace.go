@@ -26,6 +26,7 @@ type CreateWorkspaceReq struct {
 
 type CreateChannelReq struct {
 	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 func (h *WorkspaceHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
@@ -44,10 +45,16 @@ func (h *WorkspaceHandler) CreateChannel(w http.ResponseWriter, r *http.Request)
 
 	safeName := strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
 
+	channelType := req.Type
+	if channelType == "" {
+		channelType = "text"
+	}
+
 	channel, err := h.queries.CreateChannel(r.Context(), query.CreateChannelParams{
 		WorkspaceID: workspaceUUID,
 		Name:        safeName,
 		IsPrivate:   false,
+		ChannelType: channelType,
 	})
 	if err != nil {
 		http.Error(w, "Failed to create channel", http.StatusInternalServerError)
@@ -86,6 +93,7 @@ func (h *WorkspaceHandler) CreateWorkspaceWithGeneralChannel(w http.ResponseWrit
 		WorkspaceID: workspace.ID,
 		Name:        "general",
 		IsPrivate:   false,
+		ChannelType: "text",
 	})
 	if err != nil {
 		http.Error(w, "Workspace created, but failed to create general channel", http.StatusInternalServerError)
@@ -144,8 +152,32 @@ func (h *WorkspaceHandler) GetWorkspaceChannels(w http.ResponseWriter, r *http.R
 		channels = []query.Channel{}
 	}
 
+	userIDStr := r.Context().Value(middleware.UserIDKey).(string)
+	var userUUID pgtype.UUID
+	userUUID.Scan(userIDStr)
+
+	unreadCounts, _ := h.queries.GetUnreadCounts(r.Context(), userUUID, workspaceUUID)
+	unreadMap := make(map[pgtype.UUID]int64)
+	for _, uc := range unreadCounts {
+		unreadMap[uc.ChannelID] = uc.UnreadCount
+	}
+
+	type ChannelResponse struct {
+		query.Channel
+		UnreadCount int64 `json:"unread_count"`
+	}
+
+	var response []ChannelResponse
+	for _, c := range channels {
+		count := unreadMap[c.ID]
+		response = append(response, ChannelResponse{
+			Channel:     c,
+			UnreadCount: count,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(channels)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *WorkspaceHandler) JoinWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -160,25 +192,121 @@ func (h *WorkspaceHandler) JoinWorkspace(w http.ResponseWriter, r *http.Request)
 	var userUUID pgtype.UUID
 	userUUID.Scan(userIDStr)
 
-	err := h.queries.JoinWorkspace(r.Context(), workspaceUUID, userUUID)
+	err := h.queries.CreateJoinRequest(r.Context(), workspaceUUID, userUUID)
 	if err != nil {
-		http.Error(w, "Failed to join workspace", http.StatusInternalServerError)
+		http.Error(w, "Failed to create join request", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status": "joined successfully"}`))
+	w.Write([]byte(`{"status": "request sent successfully"}`))
 }
 
-func (h *WorkspaceHandler) GetDiscoverWorkspaces(w http.ResponseWriter, r *http.Request) {
-	workspaces, err := h.queries.ListAllWorkspaces(r.Context())
-	if err != nil {
-		http.Error(w, "Failed to retrieve public workspaces", http.StatusInternalServerError)
+func (h *WorkspaceHandler) GetJoinRequests(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "workspaceID")
+	var workspaceUUID pgtype.UUID
+	if err := workspaceUUID.Scan(workspaceID); err != nil {
+		http.Error(w, "Invalid workspace ID format", http.StatusBadRequest)
 		return
 	}
 
-	if workspaces == nil {
-		workspaces = []query.Workspace{}
+	userIDStr := r.Context().Value(middleware.UserIDKey).(string)
+	var userUUID pgtype.UUID
+	userUUID.Scan(userIDStr)
+
+	workspace, err := h.queries.GetWorkspaceByID(r.Context(), workspaceUUID)
+	if err != nil {
+		http.Error(w, "Workspace not found", http.StatusNotFound)
+		return
+	}
+
+	if workspace.OwnerID != userUUID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	requests, err := h.queries.GetPendingJoinRequests(r.Context(), workspaceUUID)
+	if err != nil {
+		http.Error(w, "Failed to get requests", http.StatusInternalServerError)
+		return
+	}
+
+	if requests == nil {
+		requests = []query.JoinRequest{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(requests)
+}
+
+func (h *WorkspaceHandler) ProcessJoinRequest(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "workspaceID")
+	requestID := chi.URLParam(r, "requestID")
+
+	var workspaceUUID, requestUUID pgtype.UUID
+	if err := workspaceUUID.Scan(workspaceID); err != nil {
+		http.Error(w, "Invalid workspace ID", http.StatusBadRequest)
+		return
+	}
+	if err := requestUUID.Scan(requestID); err != nil {
+		http.Error(w, "Invalid request ID", http.StatusBadRequest)
+		return
+	}
+
+	userIDStr := r.Context().Value(middleware.UserIDKey).(string)
+	var userUUID pgtype.UUID
+	userUUID.Scan(userIDStr)
+
+	workspace, err := h.queries.GetWorkspaceByID(r.Context(), workspaceUUID)
+	if err != nil {
+		http.Error(w, "Workspace not found", http.StatusNotFound)
+		return
+	}
+
+	if workspace.OwnerID != userUUID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var reqBody struct {
+		Action string `json:"action"` // "accept" or "deny"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	status := "denied"
+	if reqBody.Action == "accept" {
+		status = "approved"
+	}
+
+	row, err := h.queries.UpdateJoinRequestStatus(r.Context(), requestUUID, status)
+	if err != nil {
+		http.Error(w, "Failed to update request", http.StatusInternalServerError)
+		return
+	}
+
+	if status == "approved" {
+		if err := h.queries.JoinWorkspace(r.Context(), row.WorkspaceID, row.UserID); err != nil {
+			http.Error(w, "Failed to add user to workspace", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "processed"}`))
+}
+
+func (h *WorkspaceHandler) GetDiscoverWorkspaces(w http.ResponseWriter, r *http.Request) {
+	userIDStr := r.Context().Value(middleware.UserIDKey).(string)
+	var userUUID pgtype.UUID
+	userUUID.Scan(userIDStr)
+
+	workspaces, err := h.queries.ListDiscoverWorkspaces(r.Context(), userUUID)
+	if err != nil {
+		http.Error(w, "Failed to retrieve public workspaces", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

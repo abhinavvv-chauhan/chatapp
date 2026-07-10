@@ -31,10 +31,13 @@ func SetupRoutes(r *chi.Mux, queries *query.Queries, jwtSecret string, hub *ws.H
 			r.Get("/workspaces/{workspaceID}/channels", workspaceHandler.GetWorkspaceChannels) 
 			r.Post("/workspaces/{workspaceID}/channels", workspaceHandler.CreateChannel)
 			r.Post("/workspaces/{workspaceID}/join", workspaceHandler.JoinWorkspace)
+			r.Get("/workspaces/{workspaceID}/requests", workspaceHandler.GetJoinRequests)
+			r.Post("/workspaces/{workspaceID}/requests/{requestID}/process", workspaceHandler.ProcessJoinRequest)
 			r.Get("/discover", workspaceHandler.GetDiscoverWorkspaces)
 
 			messageHandler := handler.NewMessageHandler(queries)
 			r.Get("/channels/{channelID}/messages", messageHandler.GetMessages)
+			r.Get("/channels/{id}/catchup", messageHandler.HandleCatchUp)
 
 			pollHandler := handler.NewPollHandler(queries)
 			r.Post("/polls", pollHandler.CreatePoll)

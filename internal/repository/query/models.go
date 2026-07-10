@@ -13,6 +13,7 @@ type Channel struct {
 	WorkspaceID pgtype.UUID
 	Name        string
 	IsPrivate   bool
+	ChannelType string
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 }
@@ -21,9 +22,23 @@ type Message struct {
 	ID        pgtype.UUID
 	ChannelID pgtype.UUID
 	UserID    pgtype.UUID
+	ParentID  pgtype.UUID
 	Content   string
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+}
+
+type MessageReaction struct {
+	MessageID pgtype.UUID
+	UserID    pgtype.UUID
+	Emoji     string
+	CreatedAt pgtype.Timestamptz
+}
+
+type ChannelReadState struct {
+	ChannelID  pgtype.UUID
+	UserID     pgtype.UUID
+	LastReadAt pgtype.Timestamptz
 }
 
 type PushSubscription struct {

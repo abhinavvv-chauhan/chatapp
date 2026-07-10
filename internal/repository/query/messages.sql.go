@@ -12,24 +12,26 @@ import (
 )
 
 const createMessage = `-- name: CreateMessage :one
-INSERT INTO messages (channel_id, user_id, content)
-VALUES ($1, $2, $3)
-RETURNING id, channel_id, user_id, content, created_at, updated_at
+INSERT INTO messages (channel_id, user_id, content, parent_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, channel_id, user_id, parent_id, content, created_at, updated_at
 `
 
 type CreateMessageParams struct {
 	ChannelID pgtype.UUID
 	UserID    pgtype.UUID
 	Content   string
+	ParentID  pgtype.UUID
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
-	row := q.db.QueryRow(ctx, createMessage, arg.ChannelID, arg.UserID, arg.Content)
+	row := q.db.QueryRow(ctx, createMessage, arg.ChannelID, arg.UserID, arg.Content, arg.ParentID)
 	var i Message
 	err := row.Scan(
 		&i.ID,
 		&i.ChannelID,
 		&i.UserID,
+		&i.ParentID,
 		&i.Content,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -37,8 +39,73 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 	return i, err
 }
 
+const deleteMessage = `-- name: DeleteMessage :exec
+DELETE FROM messages
+WHERE id = $1 AND user_id = $2
+`
+
+type DeleteMessageParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) DeleteMessage(ctx context.Context, arg DeleteMessageParams) error {
+	_, err := q.db.Exec(ctx, deleteMessage, arg.ID, arg.UserID)
+	return err
+}
+
+const getMessagesPaginated = `-- name: GetMessagesPaginated :many
+SELECT id, channel_id, user_id, parent_id, content, created_at
+FROM messages
+WHERE channel_id = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetMessagesPaginatedParams struct {
+	ChannelID pgtype.UUID
+	Limit     int32
+	Offset    int32
+}
+
+type GetMessagesPaginatedRow struct {
+	ID        pgtype.UUID
+	ChannelID pgtype.UUID
+	UserID    pgtype.UUID
+	ParentID  pgtype.UUID
+	Content   string
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetMessagesPaginated(ctx context.Context, arg GetMessagesPaginatedParams) ([]GetMessagesPaginatedRow, error) {
+	rows, err := q.db.Query(ctx, getMessagesPaginated, arg.ChannelID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMessagesPaginatedRow
+	for rows.Next() {
+		var i GetMessagesPaginatedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ChannelID,
+			&i.UserID,
+			&i.ParentID,
+			&i.Content,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesByChannel = `-- name: ListMessagesByChannel :many
-SELECT id, channel_id, user_id, content, created_at, updated_at FROM messages
+SELECT id, channel_id, user_id, parent_id, content, created_at, updated_at FROM messages
 WHERE channel_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -63,6 +130,7 @@ func (q *Queries) ListMessagesByChannel(ctx context.Context, arg ListMessagesByC
 			&i.ID,
 			&i.ChannelID,
 			&i.UserID,
+			&i.ParentID,
 			&i.Content,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -75,4 +143,32 @@ func (q *Queries) ListMessagesByChannel(ctx context.Context, arg ListMessagesByC
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateMessage = `-- name: UpdateMessage :one
+UPDATE messages
+SET content = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND user_id = $3 AND CURRENT_TIMESTAMP - created_at <= interval '15 minutes'
+RETURNING id, channel_id, user_id, parent_id, content, created_at, updated_at
+`
+
+type UpdateMessageParams struct {
+	ID      pgtype.UUID
+	Content string
+	UserID  pgtype.UUID
+}
+
+func (q *Queries) UpdateMessage(ctx context.Context, arg UpdateMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, updateMessage, arg.ID, arg.Content, arg.UserID)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ChannelID,
+		&i.UserID,
+		&i.ParentID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
