@@ -697,6 +697,14 @@
           </svg>
           Explore communities
         </button>
+        <button class="btn-explore" onclick="logout()" style="margin-top: 8px; color: var(--danger);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+          Sign out
+        </button>
         <div class="workspace-tag">
           <span class="signal" id="app-signal"></span>
           Connected to Nexus
@@ -1921,6 +1929,18 @@
       label.innerHTML = loading
         ? `<span class="spinner"></span> Please wait…`
         : idleText;
+    }
+
+    function logout() {
+      localStorage.removeItem('chat_token');
+      activeToken = '';
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      document.getElementById('app-container').style.display = 'none';
+      document.getElementById('auth-panel').style.display = 'flex';
+      showToast('Logged out successfully', 'success');
     }
 
     async function handleLogin(e) {
