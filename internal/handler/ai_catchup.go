@@ -86,7 +86,7 @@ func (h *MessageHandler) HandleCatchUp(w http.ResponseWriter, r *http.Request) {
 	systemPrompt := "You are an AI assistant in a chat app. The user has been offline and missed the provided chat transcript. Summarize the conversation into three JSON fields: 'threads' (array of strings, summarizing topics), 'action_items' (array of objects with 'assignee' (string) and 'task' (string)), and 'decisions' (array of strings of finalized conclusions). Respond ONLY with valid JSON matching this schema."
 
 	reqBody := map[string]interface{}{
-		"model": "llama3-70b-8192",
+		"model": "llama-3.3-70b-versatile",
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": transcript},
